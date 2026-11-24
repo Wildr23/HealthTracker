@@ -1,9 +1,11 @@
 package com.gymtracker.app.ui.health
 
+import androidx.annotation.StringRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,12 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Height
 import androidx.compose.material.icons.filled.LocalHospital
@@ -34,6 +36,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -51,6 +54,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -60,17 +65,22 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gymtracker.app.R
+import com.gymtracker.app.domain.BodyCompositionMetric
+import com.gymtracker.app.domain.BodyMetricRange
+import com.gymtracker.app.domain.MetricDataPoint
 import com.gymtracker.app.domain.PrEngine
 import com.gymtracker.app.ui.common.formatDateShort
-import com.gymtracker.app.ui.components.BodyWeightChart
-import com.gymtracker.app.ui.scale.ScaleBadgePill
+import com.gymtracker.app.ui.components.BodyCompositionMetricChart
 import com.gymtracker.app.ui.scale.ScaleCompositionDashboardCard
 import com.gymtracker.app.ui.scale.toDisplay
 import com.gymtracker.app.ui.theme.CoralEnergy
 import com.gymtracker.app.ui.theme.ElectricBlue
 import com.gymtracker.app.ui.theme.EmeraldRest
+import com.gymtracker.app.ui.theme.GoldPr
 import com.gymtracker.app.ui.theme.ObsidianCard
 import com.gymtracker.app.ui.theme.TealAccent
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @Composable
 fun HealthScreen(
@@ -99,21 +109,20 @@ fun HealthScreen(
             Tab(
                 selected = selectedTab == 1,
                 onClick = { selectedTab = 1 },
-                text = { Text(stringResource(R.string.health_tab_weight_chart), maxLines = 1) }
+                text = { Text(stringResource(R.string.health_tab_body_analytics), maxLines = 1) }
             )
         }
 
         SnackbarHost(snackbarHostState)
 
         when (selectedTab) {
-            0 -> BodyStatsFormTab(
+            0 -> BodyStatsFormTab(state = state, onSave = viewModel::saveBodyStats)
+            1 -> BodyAnalyticsTab(
                 state = state,
                 onOpenXiaomiScale = onOpenXiaomiScale,
-                onSave = viewModel::saveBodyStats
-            )
-            1 -> WeightLogTab(
-                state = state,
-                onOpenXiaomiScale = onOpenXiaomiScale,
+                onSelectMetric = viewModel::selectMetric,
+                onSelectRange = viewModel::selectRange,
+                onToggleOverlay = viewModel::toggleWeightOverlay,
                 onAddWeight = viewModel::addBodyWeight,
                 onToggleOutlier = viewModel::toggleOutlier
             )
@@ -124,7 +133,6 @@ fun HealthScreen(
 @Composable
 private fun BodyStatsFormTab(
     state: HealthUiState,
-    onOpenXiaomiScale: () -> Unit,
     onSave: (
         kg: Double,
         fat: Double?,
@@ -161,15 +169,6 @@ private fun BodyStatsFormTab(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item {
-            XiaomiScaleQuickCard(
-                boundName = state.scaleBoundName,
-                boundMac = state.scaleBoundMac,
-                backgroundEnabled = state.scaleBackgroundEnabled,
-                weightRange = state.scaleWeightRange,
-                onOpenXiaomiScale = onOpenXiaomiScale
-            )
-        }
         item {
             ObsidianCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -258,40 +257,28 @@ private fun StatInputRow(
 }
 
 @Composable
-private fun WeightLogTab(
+private fun BodyAnalyticsTab(
     state: HealthUiState,
     onOpenXiaomiScale: () -> Unit,
+    onSelectMetric: (BodyCompositionMetric) -> Unit,
+    onSelectRange: (BodyMetricRange) -> Unit,
+    onToggleOverlay: () -> Unit,
     onAddWeight: (Double) -> Unit,
     onToggleOutlier: (com.gymtracker.app.data.db.BodyWeightEntity) -> Unit
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
+    var selectedPoint by remember(state.selectedMetric, state.selectedRange) {
+        mutableStateOf<MetricDataPoint?>(null)
+    }
+    val series = state.metricSeries
+    val accent = metricAccentColor(state.selectedMetric)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            XiaomiScaleQuickCard(
-                boundName = state.scaleBoundName,
-                boundMac = state.scaleBoundMac,
-                backgroundEnabled = state.scaleBackgroundEnabled,
-                weightRange = state.scaleWeightRange,
-                onOpenXiaomiScale = onOpenXiaomiScale
-            )
-        }
-
-        state.latestScaleReading?.let { snapshot ->
-            item {
-                ScaleCompositionDashboardCard(
-                    data = snapshot.toDisplay(),
-                    heightCm = state.heightCm,
-                    birthYear = state.birthYear,
-                    isMale = state.isMale
-                )
-            }
-        }
-
+        // Multi-Metric Interactive Chart Card (All 11 Xiaomi Scale Metrics)
         item {
             ObsidianCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -300,8 +287,9 @@ private fun WeightLogTab(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = stringResource(R.string.health_bw_title),
+                            text = stringResource(metricLabelRes(state.selectedMetric)),
                             style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
                         )
                         Button(onClick = { showAddDialog = true }, shape = RoundedCornerShape(20.dp)) {
@@ -310,10 +298,167 @@ private fun WeightLogTab(
                             Text(stringResource(R.string.health_bw_add))
                         }
                     }
-                    if (state.bodyWeights.isNotEmpty()) {
-                        BodyWeightChart(entries = state.bodyWeights)
+
+                    // 11 Metric Selector Chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        BodyCompositionMetric.entries.forEach { m ->
+                            FilterChip(
+                                selected = state.selectedMetric == m,
+                                onClick = { onSelectMetric(m) },
+                                label = { Text(stringResource(metricLabelRes(m)), maxLines = 1) }
+                            )
+                        }
+                    }
+
+                    // Date Range Pills (14D | 1M | 3M | 6M | 1Y | All)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        BodyMetricRange.entries.forEach { rng ->
+                            val active = state.selectedRange == rng
+                            TextButton(
+                                onClick = { onSelectRange(rng) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = if (active) {
+                                    ButtonDefaults.textButtonColors(
+                                        containerColor = ElectricBlue,
+                                        contentColor = Color.White
+                                    )
+                                } else {
+                                    ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = stringResource(rangeLabelRes(rng)),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    // KPI Strip: Current, Delta, Min/Max
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(stringResource(R.string.body_metric_current), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = series.latest?.let { formatMetricWithUnit(it, state.selectedMetric) } ?: "—",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Column {
+                            Text(stringResource(R.string.body_metric_delta), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            val deltaStr = series.delta?.let { d ->
+                                val sign = if (d > 0.0) "+" else ""
+                                "$sign${formatMetricValue(d, state.selectedMetric)}"
+                            } ?: "—"
+                            val deltaColor = when (series.isDeltaGood) {
+                                true -> EmeraldRest
+                                false -> CoralEnergy
+                                null -> MaterialTheme.colorScheme.onSurface
+                            }
+                            Text(
+                                text = deltaStr,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = deltaColor
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                "${stringResource(R.string.ex_chart_min)} / ${stringResource(R.string.ex_chart_max)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = if (series.min != null && series.max != null) {
+                                    "${formatMetricValue(series.min, state.selectedMetric)} / ${formatMetricValue(series.max, state.selectedMetric)}"
+                                } else "—",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    if (state.selectedMetric != BodyCompositionMetric.WEIGHT_KG && series.points.size >= 2) {
+                        FilterChip(
+                            selected = state.showWeightOverlay,
+                            onClick = onToggleOverlay,
+                            label = { Text(stringResource(R.string.body_compare_weight), maxLines = 1) }
+                        )
+                    }
+
+                    if (series.points.size >= 2) {
+                        BodyCompositionMetricChart(
+                            points = series.points,
+                            accentColor = accent,
+                            selectedPoint = selectedPoint,
+                            onSelectPoint = { selectedPoint = it },
+                            showWeightOverlay = state.showWeightOverlay && state.selectedMetric != BodyCompositionMetric.WEIGHT_KG,
+                            formatAxisValue = { v -> formatMetricValue(v, state.selectedMetric) }
+                        )
+                        selectedPoint?.let { pt ->
+                            val overlayNote = if (state.showWeightOverlay && pt.weightOverlayKg != null && state.selectedMetric != BodyCompositionMetric.WEIGHT_KG) {
+                                " • ${PrEngine.formatKg(pt.weightOverlayKg)} ${stringResource(R.string.unit_kg)}"
+                            } else ""
+                            Text(
+                                text = "${formatDateShort(pt.date)}: ${formatMetricWithUnit(pt.value, state.selectedMetric)}$overlayNote",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = accent,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.body_need_more_points),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedButton(onClick = onOpenXiaomiScale, shape = RoundedCornerShape(18.dp)) {
+                                Icon(Icons.Default.MonitorWeight, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(stringResource(R.string.scale_action_weigh_in))
+                            }
+                        }
                     }
                 }
+            }
+        }
+
+        // Interactive Latest Body Composition Dashboard (tapping any tile selects its chart above!)
+        state.latestScaleReading?.let { snapshot ->
+            item {
+                ScaleCompositionDashboardCard(
+                    data = snapshot.toDisplay(),
+                    heightCm = state.heightCm,
+                    birthYear = state.birthYear,
+                    isMale = state.isMale,
+                    selectedMetric = state.selectedMetric,
+                    onMetricClick = onSelectMetric
+                )
             }
         }
 
@@ -394,76 +539,60 @@ private fun WeightLogTab(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+private fun metricAccentColor(metric: BodyCompositionMetric): Color = when (metric) {
+    BodyCompositionMetric.WEIGHT_KG, BodyCompositionMetric.BMI -> ElectricBlue
+    BodyCompositionMetric.FAT_PERCENT, BodyCompositionMetric.VISCERAL_FAT, BodyCompositionMetric.METABOLIC_AGE -> GoldPr
+    BodyCompositionMetric.MUSCLE_MASS_KG, BodyCompositionMetric.LEAN_BODY_MASS_KG, BodyCompositionMetric.PROTEIN_PERCENT -> EmeraldRest
+    BodyCompositionMetric.WATER_PERCENT, BodyCompositionMetric.BONE_MASS_KG -> TealAccent
+    BodyCompositionMetric.BMR_KCAL -> CoralEnergy
+}
+
+@StringRes
+private fun metricLabelRes(metric: BodyCompositionMetric): Int = when (metric) {
+    BodyCompositionMetric.WEIGHT_KG -> R.string.stat_weight
+    BodyCompositionMetric.FAT_PERCENT -> R.string.scale_metric_fat
+    BodyCompositionMetric.MUSCLE_MASS_KG -> R.string.scale_metric_muscle
+    BodyCompositionMetric.LEAN_BODY_MASS_KG -> R.string.scale_metric_lbm
+    BodyCompositionMetric.WATER_PERCENT -> R.string.scale_metric_water
+    BodyCompositionMetric.PROTEIN_PERCENT -> R.string.scale_metric_protein
+    BodyCompositionMetric.VISCERAL_FAT -> R.string.scale_metric_visceral
+    BodyCompositionMetric.BONE_MASS_KG -> R.string.scale_metric_bone
+    BodyCompositionMetric.BMI -> R.string.scale_metric_bmi
+    BodyCompositionMetric.BMR_KCAL -> R.string.scale_metric_bmr
+    BodyCompositionMetric.METABOLIC_AGE -> R.string.scale_metric_metabolic_age
+}
+
+@StringRes
+private fun rangeLabelRes(range: BodyMetricRange): Int = when (range) {
+    BodyMetricRange.D14 -> R.string.ex_range_14d
+    BodyMetricRange.M1 -> R.string.ex_range_1m
+    BodyMetricRange.M3 -> R.string.ex_range_3m
+    BodyMetricRange.M6 -> R.string.ex_range_6m
+    BodyMetricRange.Y1 -> R.string.ex_range_1y
+    BodyMetricRange.ALL -> R.string.ex_range_all
+}
+
+private fun formatMetricValue(v: Double, metric: BodyCompositionMetric): String = when (metric) {
+    BodyCompositionMetric.VISCERAL_FAT,
+    BodyCompositionMetric.BMR_KCAL,
+    BodyCompositionMetric.METABOLIC_AGE -> v.roundToInt().toString()
+    BodyCompositionMetric.BONE_MASS_KG -> String.format("%.2f", v)
+    else -> if (abs(v - v.roundToInt()) < 0.05) "${v.roundToInt()}" else String.format("%.1f", v)
+}
+
 @Composable
-private fun XiaomiScaleQuickCard(
-    boundName: String?,
-    boundMac: String?,
-    backgroundEnabled: Boolean,
-    weightRange: Pair<Double, Double>,
-    onOpenXiaomiScale: () -> Unit
-) {
-    ObsidianCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Bluetooth,
-                contentDescription = null,
-                tint = ElectricBlue,
-                modifier = Modifier.size(28.dp)
-            )
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(R.string.scale_card_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    ScaleBadgePill(
-                        text = stringResource(R.string.scale_range_pill, weightRange.first, weightRange.second),
-                        color = ElectricBlue
-                    )
-                    if (boundMac != null) {
-                        ScaleBadgePill(
-                            text = if (backgroundEnabled) {
-                                stringResource(R.string.scale_bg_on_label)
-                            } else {
-                                stringResource(R.string.scale_bg_off_label)
-                            },
-                            color = if (backgroundEnabled) EmeraldRest else CoralEnergy
-                        )
-                    }
-                }
-                if (boundMac != null) {
-                    Text(
-                        text = "${boundName ?: "Xiaomi Scale"} • $boundMac",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Button(
-                onClick = onOpenXiaomiScale,
-                shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
-            ) {
-                Text(
-                    text = if (boundMac != null) {
-                        stringResource(R.string.scale_action_weigh_in)
-                    } else {
-                        stringResource(R.string.scale_action_setup)
-                    },
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1
-                )
-            }
-        }
+private fun formatMetricWithUnit(v: Double, metric: BodyCompositionMetric): String {
+    val num = formatMetricValue(v, metric)
+    return when (metric) {
+        BodyCompositionMetric.WEIGHT_KG,
+        BodyCompositionMetric.MUSCLE_MASS_KG,
+        BodyCompositionMetric.LEAN_BODY_MASS_KG,
+        BodyCompositionMetric.BONE_MASS_KG -> "$num ${stringResource(R.string.unit_kg)}"
+        BodyCompositionMetric.FAT_PERCENT,
+        BodyCompositionMetric.WATER_PERCENT,
+        BodyCompositionMetric.PROTEIN_PERCENT -> "$num%"
+        BodyCompositionMetric.BMR_KCAL -> "$num ${stringResource(R.string.scale_unit_kcal)}"
+        BodyCompositionMetric.METABOLIC_AGE -> "$num ${stringResource(R.string.scale_unit_years)}"
+        BodyCompositionMetric.VISCERAL_FAT, BodyCompositionMetric.BMI -> num
     }
 }

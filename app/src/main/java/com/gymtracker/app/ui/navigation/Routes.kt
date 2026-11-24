@@ -13,6 +13,8 @@ object Routes {
     const val EXERCISE_DETAIL = "exercise_detail/{exerciseId}"
     const val MUSCLE_RECOVERY = "muscle_recovery"
     const val XIAOMI_SCALE = "xiaomi_scale"
+    const val WATCH_ACTIVITY = "watch_activity"
+    const val CONNECTED_DEVICES = "connected_devices"
 
     fun activeWorkout(workoutId: Long) = "active_workout/$workoutId"
     fun workoutSummary(workoutId: Long) = "workout_summary/$workoutId"

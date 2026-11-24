@@ -54,7 +54,8 @@ private data class LiveScanRuntimeState(
     val liveMacAddress: String? = null,
     val liveDeviceName: String? = null,
     val liveComposition: ScaleBodyComposition? = null,
-    val discoveredScales: Map<String, DiscoveredScale> = emptyMap()
+    val discoveredScales: Map<String, DiscoveredScale> = emptyMap(),
+    val isIgnoringBatteryOptimizations: Boolean = false
 )
 
 data class XiaomiScaleUiState(
@@ -69,6 +70,7 @@ data class XiaomiScaleUiState(
     val liveMacAddress: String? = null,
     val liveDeviceName: String? = null,
     val liveComposition: ScaleBodyComposition? = null,
+    val isIgnoringBatteryOptimizations: Boolean = false,
     val resolvedRange: Pair<Double, Double> = 93.0 to 117.0,
     val discoveredScales: List<DiscoveredScale> = emptyList(),
     val latestSavedReading: ScaleReadingSnapshot? = null
@@ -85,7 +87,8 @@ class XiaomiScaleViewModel @Inject constructor(
     private val runtime = MutableStateFlow(
         LiveScanRuntimeState(
             hasBlePermissions = bleController.hasBlePermissions(),
-            isBluetoothEnabled = bleController.isBluetoothEnabled()
+            isBluetoothEnabled = bleController.isBluetoothEnabled(),
+            isIgnoringBatteryOptimizations = bleController.isIgnoringBatteryOptimizations()
         )
     )
 
@@ -115,6 +118,7 @@ class XiaomiScaleViewModel @Inject constructor(
             liveMacAddress = rt.liveMacAddress,
             liveDeviceName = rt.liveDeviceName,
             liveComposition = rt.liveComposition,
+            isIgnoringBatteryOptimizations = rt.isIgnoringBatteryOptimizations,
             resolvedRange = range,
             discoveredScales = rt.discoveredScales.values.sortedByDescending { it.rssi },
             latestSavedReading = latestSaved
@@ -124,9 +128,11 @@ class XiaomiScaleViewModel @Inject constructor(
     fun refreshStatus(autoStartScan: Boolean = true) {
         val permOk = bleController.hasBlePermissions()
         val btOk = bleController.isBluetoothEnabled()
+        val batOk = bleController.isIgnoringBatteryOptimizations()
         runtime.value = runtime.value.copy(
             hasBlePermissions = permOk,
-            isBluetoothEnabled = btOk
+            isBluetoothEnabled = btOk,
+            isIgnoringBatteryOptimizations = batOk
         )
         viewModelScope.launch {
             bleController.syncBackgroundScan()

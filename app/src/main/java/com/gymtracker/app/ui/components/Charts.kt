@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.gymtracker.app.data.db.BodyWeightEntity
 import com.gymtracker.app.data.db.HrSampleEntity
 import com.gymtracker.app.data.db.PrType
+import com.gymtracker.app.domain.MetricDataPoint
 import com.gymtracker.app.domain.SessionPrPoint
 import com.gymtracker.app.domain.TrainingBreak
 import com.gymtracker.app.ui.theme.CoralEnergy
@@ -35,6 +37,7 @@ import com.gymtracker.app.ui.theme.HrZoneColors
 import com.gymtracker.app.ui.theme.TealAccent
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -503,5 +506,286 @@ fun BodyWeightChart(
         }
         drawPath(validPoints.foldIndexed(Path()) { idx, acc, pt -> acc.apply { if (idx == 0) moveTo(pt.x, pt.y) else lineTo(pt.x, pt.y) } }, ElectricBlue, style = Stroke(2.2.dp.toPx(), cap = StrokeCap.Round))
         validPoints.forEach { drawCircle(ElectricBlue, radius = 3.5.dp.toPx(), center = it) }
+    }
+}
+
+@Composable
+fun BodyCompositionMetricChart(
+    points: List<MetricDataPoint>,
+    accentColor: Color,
+    selectedPoint: MetricDataPoint?,
+    onSelectPoint: (MetricDataPoint?) -> Unit,
+    showWeightOverlay: Boolean = false,
+    formatAxisValue: (Double) -> String = { v ->
+        if (abs(v - v.roundToInt()) < 0.05) "${v.roundToInt()}" else String.format("%.1f", v)
+    },
+    modifier: Modifier = Modifier
+) {
+    val measurer = rememberTextMeasurer()
+    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+
+    if (points.isEmpty()) {
+        Box(modifier = modifier.fillMaxWidth().height(180.dp))
+        return
+    }
+
+    val rawMin = points.minOf { it.value }
+    val rawMax = points.maxOf { it.value }
+    val rawSpan = (rawMax - rawMin).let { if (it < 0.2) 2.0 else it }
+    val pad = rawSpan * 0.15
+    val minVal = rawMin - pad
+    val maxVal = rawMax + pad
+    val span = (maxVal - minVal).coerceAtLeast(0.5)
+
+    val overlayWeights = if (showWeightOverlay) points.mapNotNull { it.weightOverlayKg } else emptyList()
+    val minW = overlayWeights.minOrNull()?.let { it - 1.5 } ?: 0.0
+    val maxW = overlayWeights.maxOrNull()?.let { it + 1.5 } ?: 1.0
+    val wSpan = (maxW - minW).coerceAtLeast(2.0)
+
+    val minEpoch = points.first().date.toEpochDay().toDouble()
+    val maxEpoch = points.last().date.toEpochDay().toDouble()
+    val epochSpan = (maxEpoch - minEpoch).coerceAtLeast(1.0)
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(200.dp)
+            .pointerInput(points) {
+                detectTapGestures { offset ->
+                    val leftPad = 42.dp.toPx()
+                    val rightPad = 14.dp.toPx()
+                    val plotW = (size.width - leftPad - rightPad).coerceAtLeast(1f)
+                    val xs = points.map { p ->
+                        val ratio = if (points.size == 1) 0.5f else ((p.date.toEpochDay() - minEpoch) / epochSpan).toFloat()
+                        leftPad + ratio * plotW
+                    }
+                    val nearestIdx = xs.indices.minByOrNull { abs(xs[it] - offset.x) }
+                    if (nearestIdx != null) {
+                        val cand = points[nearestIdx]
+                        onSelectPoint(if (selectedPoint?.date == cand.date) null else cand)
+                    }
+                }
+            }
+    ) {
+        val leftPad = 42.dp.toPx()
+        val rightPad = 14.dp.toPx()
+        val topPad = 12.dp.toPx()
+        val bottomPad = 24.dp.toPx()
+        val plotW = (size.width - leftPad - rightPad).coerceAtLeast(1f)
+        val plotH = (size.height - topPad - bottomPad).coerceAtLeast(1f)
+
+        fun xFor(p: MetricDataPoint): Float {
+            val ratio = if (points.size == 1) 0.5f else ((p.date.toEpochDay() - minEpoch) / epochSpan).toFloat()
+            return leftPad + ratio * plotW
+        }
+
+        fun yFor(v: Double): Float {
+            val ratio = ((v - minVal) / span).toFloat().coerceIn(0f, 1f)
+            return topPad + plotH * (1f - ratio)
+        }
+
+        // Grid + Y-axis labels
+        val steps = 3
+        for (i in 0..steps) {
+            val v = minVal + (span * i / steps.toDouble())
+            val y = yFor(v)
+            drawLine(gridColor, Offset(leftPad, y), Offset(size.width - rightPad, y), 1.dp.toPx())
+            val lbl = measurer.measure(formatAxisValue(v), TextStyle(color = axisColor, fontSize = 10.sp))
+            drawText(lbl, topLeft = Offset(2.dp.toPx(), y - lbl.size.height / 2f))
+        }
+
+        // Optional dashed weight overlay (normalized)
+        if (showWeightOverlay && overlayWeights.size >= 2) {
+            val wPath = Path()
+            var startedW = false
+            points.forEach { p ->
+                val w = p.weightOverlayKg ?: return@forEach
+                val x = xFor(p)
+                val y = topPad + plotH * (1f - ((w - minW) / wSpan).toFloat().coerceIn(0f, 1f))
+                if (!startedW) {
+                    wPath.moveTo(x, y)
+                    startedW = true
+                } else {
+                    wPath.lineTo(x, y)
+                }
+            }
+            drawPath(
+                path = wPath,
+                color = axisColor.copy(alpha = 0.55f),
+                style = Stroke(
+                    width = 1.6.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
+                )
+            )
+        }
+
+        // Primary curve + vertical gradient fill
+        val coords = points.map { p -> Offset(xFor(p), yFor(p.value)) }
+        if (coords.size >= 2) {
+            val linePath = Path()
+            val fillPath = Path()
+            coords.forEachIndexed { idx, pt ->
+                if (idx == 0) {
+                    linePath.moveTo(pt.x, pt.y)
+                    fillPath.moveTo(pt.x, topPad + plotH)
+                    fillPath.lineTo(pt.x, pt.y)
+                } else {
+                    linePath.lineTo(pt.x, pt.y)
+                    fillPath.lineTo(pt.x, pt.y)
+                }
+            }
+            fillPath.lineTo(coords.last().x, topPad + plotH)
+            fillPath.close()
+
+            drawPath(
+                path = fillPath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(accentColor.copy(alpha = 0.28f), accentColor.copy(alpha = 0.02f)),
+                    startY = topPad,
+                    endY = topPad + plotH
+                )
+            )
+            drawPath(linePath, accentColor, style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round))
+        }
+
+        // Dots & selection crosshair
+        val regR = if (points.size > 30) 2.2.dp.toPx() else 3.5.dp.toPx()
+        points.forEachIndexed { idx, p ->
+            val c = coords[idx]
+            val isSelected = selectedPoint?.date == p.date
+            if (isSelected) {
+                drawLine(
+                    color = axisColor.copy(alpha = 0.65f),
+                    start = Offset(c.x, topPad),
+                    end = Offset(c.x, topPad + plotH),
+                    strokeWidth = 1.4.dp.toPx()
+                )
+                drawCircle(accentColor.copy(alpha = 0.28f), radius = 8.dp.toPx(), center = c)
+                drawCircle(accentColor, radius = 4.8.dp.toPx(), center = c)
+            } else {
+                drawCircle(accentColor, radius = regR, center = c)
+            }
+        }
+
+        // First & last date labels
+        val fmt = DateTimeFormatter.ofPattern("dd.MM")
+        val firstLbl = measurer.measure(points.first().date.format(fmt), TextStyle(color = axisColor, fontSize = 10.sp))
+        drawText(firstLbl, topLeft = Offset(leftPad, topPad + plotH + 4.dp.toPx()))
+        if (points.size > 1) {
+            val lastLbl = measurer.measure(points.last().date.format(fmt), TextStyle(color = axisColor, fontSize = 10.sp))
+            drawText(lastLbl, topLeft = Offset(size.width - rightPad - lastLbl.size.width, topPad + plotH + 4.dp.toPx()))
+        }
+    }
+}
+
+@Composable
+fun WatchDailyBarChart(
+    dates: List<LocalDate>,
+    values: List<Double>,
+    goalValue: Double?,
+    accentColor: Color,
+    selectedIndex: Int?,
+    onSelectIndex: (Int?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val measurer = rememberTextMeasurer()
+    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+
+    if (dates.isEmpty() || values.isEmpty() || dates.size != values.size) {
+        Box(modifier = modifier.fillMaxWidth().height(170.dp))
+        return
+    }
+
+    val maxData = values.maxOrNull() ?: 0.0
+    val maxBound = maxOf(maxData, goalValue ?: 0.0, 1.0) * 1.12
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(185.dp)
+            .pointerInput(values) {
+                detectTapGestures { offset ->
+                    val leftPad = 38.dp.toPx()
+                    val rightPad = 10.dp.toPx()
+                    val plotW = (size.width - leftPad - rightPad).coerceAtLeast(1f)
+                    val slotW = plotW / values.size.toFloat()
+                    val tappedIdx = ((offset.x - leftPad) / slotW).toInt().coerceIn(0, values.lastIndex)
+                    onSelectIndex(if (selectedIndex == tappedIdx) null else tappedIdx)
+                }
+            }
+    ) {
+        val leftPad = 38.dp.toPx()
+        val rightPad = 10.dp.toPx()
+        val topPad = 10.dp.toPx()
+        val bottomPad = 24.dp.toPx()
+        val plotW = (size.width - leftPad - rightPad).coerceAtLeast(1f)
+        val plotH = (size.height - topPad - bottomPad).coerceAtLeast(1f)
+
+        fun yFor(v: Double): Float {
+            val ratio = (v / maxBound).toFloat().coerceIn(0f, 1f)
+            return topPad + plotH * (1f - ratio)
+        }
+
+        // Grid + Y labels
+        listOf(0.0, maxBound * 0.5, maxBound).forEach { v ->
+            val y = yFor(v)
+            drawLine(gridColor, Offset(leftPad, y), Offset(size.width - rightPad, y), 1.dp.toPx())
+            val labelStr = if (maxBound >= 1000.0) {
+                if (v < 1.0) "0" else String.format("%.1fk", v / 1000.0)
+            } else if (maxBound >= 15.0) {
+                "${v.roundToInt()}"
+            } else {
+                String.format("%.1f", v)
+            }
+            val txt = measurer.measure(labelStr, TextStyle(color = axisColor, fontSize = 9.sp))
+            drawText(txt, topLeft = Offset(2.dp.toPx(), y - txt.size.height / 2f))
+        }
+
+        val slotW = plotW / values.size.toFloat()
+        val barW = (slotW * 0.62f).coerceIn(4.dp.toPx(), 24.dp.toPx())
+        val radius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+
+        values.forEachIndexed { idx, v ->
+            val xCenter = leftPad + slotW * (idx + 0.5f)
+            val barTop = yFor(v)
+            val barH = (topPad + plotH - barTop).coerceAtLeast(if (v > 0.0) 3.dp.toPx() else 0f)
+            val metGoal = goalValue != null && goalValue > 0.0 && v >= goalValue
+            val baseColor = if (metGoal) EmeraldRest else accentColor
+            val alpha = when {
+                selectedIndex == null -> 0.88f
+                selectedIndex == idx -> 1f
+                else -> 0.42f
+            }
+            if (barH > 0f) {
+                drawRoundRect(
+                    color = baseColor.copy(alpha = alpha),
+                    topLeft = Offset(xCenter - barW / 2f, topPad + plotH - barH),
+                    size = Size(barW, barH),
+                    cornerRadius = radius
+                )
+            }
+        }
+
+        // Goal dashed horizontal line
+        if (goalValue != null && goalValue > 0.0 && goalValue <= maxBound) {
+            val gy = yFor(goalValue)
+            drawLine(
+                color = EmeraldRest.copy(alpha = 0.85f),
+                start = Offset(leftPad, gy),
+                end = Offset(size.width - rightPad, gy),
+                strokeWidth = 1.6.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
+            )
+        }
+
+        val fmt = DateTimeFormatter.ofPattern("dd.MM")
+        val firstLbl = measurer.measure(dates.first().format(fmt), TextStyle(color = axisColor, fontSize = 9.sp))
+        drawText(firstLbl, topLeft = Offset(leftPad, topPad + plotH + 4.dp.toPx()))
+        if (dates.size > 1) {
+            val lastLbl = measurer.measure(dates.last().format(fmt), TextStyle(color = axisColor, fontSize = 9.sp))
+            drawText(lastLbl, topLeft = Offset(size.width - rightPad - lastLbl.size.width, topPad + plotH + 4.dp.toPx()))
+        }
     }
 }

@@ -3,10 +3,14 @@ package com.gymtracker.app.ui.scale
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.CheckCircle
@@ -52,7 +57,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +65,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -72,6 +80,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gymtracker.app.R
 import com.gymtracker.app.data.scale.ScaleProtocol
 import com.gymtracker.app.data.scale.ScaleReadingSnapshot
+import com.gymtracker.app.domain.BodyCompositionMetric
 import com.gymtracker.app.domain.MetricStatus
 import com.gymtracker.app.domain.PrEngine
 import com.gymtracker.app.domain.ScaleBodyComposition
@@ -162,12 +171,19 @@ fun XiaomiScaleScreen(
         viewModel.refreshStatus(autoStartScan = true)
     }
 
-    LaunchedEffect(Unit) {
-        viewModel.refreshStatus(autoStartScan = true)
-    }
-
-    DisposableEffect(Unit) {
-        onDispose { viewModel.stopLiveScan() }
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshStatus(autoStartScan = true)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(obs)
+            viewModel.stopLiveScan()
+        }
     }
 
     Scaffold(
@@ -287,6 +303,47 @@ fun XiaomiScaleScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(stringResource(R.string.scale_enable_bt), fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (state.prefs.scaleBackgroundEnabled && !state.isIgnoringBatteryOptimizations) {
+                item {
+                    ObsidianCard(highlightedBorder = GoldPr, modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.BatteryChargingFull, contentDescription = null, tint = GoldPr)
+                                Text(
+                                    text = stringResource(R.string.scale_battery_warn_title),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = GoldPr,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = stringResource(R.string.scale_battery_warn_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                    runCatching { context.startActivity(intent) }
+                                },
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(stringResource(R.string.scale_battery_action))
                             }
                         }
                     }
@@ -709,6 +766,8 @@ fun ScaleCompositionDashboardCard(
     heightCm: Int,
     birthYear: Int,
     isMale: Boolean,
+    selectedMetric: BodyCompositionMetric? = null,
+    onMetricClick: ((BodyCompositionMetric) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val age = (LocalDate.now().year - birthYear).coerceIn(10, 100)
@@ -762,7 +821,8 @@ fun ScaleCompositionDashboardCard(
                     CompMetricCell(
                         label = stringResource(R.string.scale_metric_bmi),
                         value = String.format("%.1f", data.bmi),
-                        status = XiaomiBodyCompositionCalculator.bmiStatus(data.bmi)
+                        status = XiaomiBodyCompositionCalculator.bmiStatus(data.bmi),
+                        metric = BodyCompositionMetric.BMI
                     )
                 )
                 data.fatPercent?.let { fat ->
@@ -770,7 +830,8 @@ fun ScaleCompositionDashboardCard(
                         CompMetricCell(
                             label = stringResource(R.string.scale_metric_fat),
                             value = String.format("%.1f%%", fat),
-                            status = XiaomiBodyCompositionCalculator.fatStatus(fat, isMale, age)
+                            status = XiaomiBodyCompositionCalculator.fatStatus(fat, isMale, age),
+                            metric = BodyCompositionMetric.FAT_PERCENT
                         )
                     )
                 }
@@ -778,7 +839,8 @@ fun ScaleCompositionDashboardCard(
                     add(
                         CompMetricCell(
                             label = stringResource(R.string.scale_metric_muscle),
-                            value = "${PrEngine.formatKg(m)} $kgUnit"
+                            value = "${PrEngine.formatKg(m)} $kgUnit",
+                            metric = BodyCompositionMetric.MUSCLE_MASS_KG
                         )
                     )
                 }
@@ -786,7 +848,8 @@ fun ScaleCompositionDashboardCard(
                     add(
                         CompMetricCell(
                             label = stringResource(R.string.scale_metric_lbm),
-                            value = "${PrEngine.formatKg(lbm)} $kgUnit"
+                            value = "${PrEngine.formatKg(lbm)} $kgUnit",
+                            metric = BodyCompositionMetric.LEAN_BODY_MASS_KG
                         )
                     )
                 }
@@ -795,7 +858,8 @@ fun ScaleCompositionDashboardCard(
                         CompMetricCell(
                             label = stringResource(R.string.scale_metric_water),
                             value = String.format("%.1f%%", w),
-                            status = XiaomiBodyCompositionCalculator.waterStatus(w, isMale)
+                            status = XiaomiBodyCompositionCalculator.waterStatus(w, isMale),
+                            metric = BodyCompositionMetric.WATER_PERCENT
                         )
                     )
                 }
@@ -804,7 +868,8 @@ fun ScaleCompositionDashboardCard(
                         CompMetricCell(
                             label = stringResource(R.string.scale_metric_protein),
                             value = String.format("%.1f%%", p),
-                            status = XiaomiBodyCompositionCalculator.proteinStatus(p)
+                            status = XiaomiBodyCompositionCalculator.proteinStatus(p),
+                            metric = BodyCompositionMetric.PROTEIN_PERCENT
                         )
                     )
                 }
@@ -812,28 +877,32 @@ fun ScaleCompositionDashboardCard(
                     CompMetricCell(
                         label = stringResource(R.string.scale_metric_visceral),
                         value = data.visceralFat.toString(),
-                        status = XiaomiBodyCompositionCalculator.visceralStatus(data.visceralFat)
+                        status = XiaomiBodyCompositionCalculator.visceralStatus(data.visceralFat),
+                        metric = BodyCompositionMetric.VISCERAL_FAT
                     )
                 )
                 data.boneMassKg?.let { bone ->
                     add(
                         CompMetricCell(
                             label = stringResource(R.string.scale_metric_bone),
-                            value = "${String.format("%.2f", bone)} $kgUnit"
+                            value = "${String.format("%.2f", bone)} $kgUnit",
+                            metric = BodyCompositionMetric.BONE_MASS_KG
                         )
                     )
                 }
                 add(
                     CompMetricCell(
                         label = stringResource(R.string.scale_metric_bmr),
-                        value = "${data.bmrKcal} $kcalUnit"
+                        value = "${data.bmrKcal} $kcalUnit",
+                        metric = BodyCompositionMetric.BMR_KCAL
                     )
                 )
                 data.metabolicAge?.let { ma ->
                     add(
                         CompMetricCell(
                             label = stringResource(R.string.scale_metric_metabolic_age),
-                            value = "$ma $yrsUnit"
+                            value = "$ma $yrsUnit",
+                            metric = BodyCompositionMetric.METABOLIC_AGE
                         )
                     )
                 }
@@ -857,11 +926,24 @@ fun ScaleCompositionDashboardCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     pair.forEach { cell ->
+                        val isSelected = selectedMetric != null && cell.metric == selectedMetric
+                        val clickableMod = if (onMetricClick != null && cell.metric != null) {
+                            Modifier.clickable { onMetricClick(cell.metric) }
+                        } else Modifier
+                        val borderMod = if (isSelected) {
+                            Modifier.border(1.dp, ElectricBlue, RoundedCornerShape(12.dp))
+                        } else Modifier
+
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                                .then(borderMod)
+                                .background(
+                                    if (isSelected) ElectricBlue.copy(alpha = 0.12f)
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                )
+                                .then(clickableMod)
                                 .padding(horizontal = 12.dp, vertical = 10.dp)
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -902,7 +984,8 @@ fun ScaleCompositionDashboardCard(
 private data class CompMetricCell(
     val label: String,
     val value: String,
-    val status: MetricStatus? = null
+    val status: MetricStatus? = null,
+    val metric: BodyCompositionMetric? = null
 )
 
 @Composable

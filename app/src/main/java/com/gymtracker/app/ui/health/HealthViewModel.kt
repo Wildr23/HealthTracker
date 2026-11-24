@@ -9,7 +9,10 @@ import com.gymtracker.app.data.prefs.UserPreferencesRepository
 import com.gymtracker.app.data.repo.WorkoutRepository
 import com.gymtracker.app.data.scale.ScaleReadingSnapshot
 import com.gymtracker.app.data.scale.ScaleReadingsRepository
-import com.gymtracker.app.data.scale.XiaomiScaleBleController
+import com.gymtracker.app.domain.BodyCompositionMetric
+import com.gymtracker.app.domain.BodyMetricRange
+import com.gymtracker.app.domain.BodyMetricSeries
+import com.gymtracker.app.domain.BodyMetricSeriesResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,15 +28,24 @@ data class HealthUiState(
     val bodyWeights: List<BodyWeightEntity> = emptyList(),
     val latestStats: BodyWeightEntity? = null,
     val heightCm: Int = 182,
-    val birthYear: Int = 1990,
+    val birthYear: Int = 1993,
     val isMale: Boolean = true,
     val savedBannerVisible: Boolean = false,
     val scaleReadingsByDate: Map<LocalDate, ScaleReadingSnapshot> = emptyMap(),
     val latestScaleReading: ScaleReadingSnapshot? = null,
-    val scaleBoundName: String? = null,
-    val scaleBoundMac: String? = null,
-    val scaleBackgroundEnabled: Boolean = true,
-    val scaleWeightRange: Pair<Double, Double> = 93.0 to 117.0
+    val selectedMetric: BodyCompositionMetric = BodyCompositionMetric.WEIGHT_KG,
+    val selectedRange: BodyMetricRange = BodyMetricRange.M3,
+    val showWeightOverlay: Boolean = false,
+    val metricSeries: BodyMetricSeriesResult = BodyMetricSeriesResult(
+        metric = BodyCompositionMetric.WEIGHT_KG,
+        points = emptyList(),
+        latest = null,
+        delta = null,
+        min = null,
+        max = null,
+        average = null,
+        isDeltaGood = null
+    )
 )
 
 @HiltViewModel
@@ -41,21 +53,30 @@ class HealthViewModel @Inject constructor(
     private val bodyWeightDao: BodyWeightDao,
     private val workoutRepository: WorkoutRepository,
     private val prefsRepo: UserPreferencesRepository,
-    private val scaleReadingsRepository: ScaleReadingsRepository,
-    private val bleController: XiaomiScaleBleController
+    private val scaleReadingsRepository: ScaleReadingsRepository
 ) : ViewModel() {
 
     private val savedFlag = MutableStateFlow(false)
+    private val selectedMetric = MutableStateFlow(BodyCompositionMetric.WEIGHT_KG)
+    private val selectedRange = MutableStateFlow(BodyMetricRange.M3)
+    private val weightOverlay = MutableStateFlow(false)
 
     val uiState: StateFlow<HealthUiState> = combine(
         bodyWeightDao.observeAll(),
         prefsRepo.preferences,
         scaleReadingsRepository.readingsByDate,
-        savedFlag
-    ) { list, prefs, scaleMap, saved ->
+        savedFlag,
+        combine(selectedMetric, selectedRange, weightOverlay) { m, r, o -> Triple(m, r, o) }
+    ) { list, prefs, scaleMap, saved, (metric, range, overlay) ->
         val valid = list.firstOrNull { !it.flaggedOutlier } ?: list.firstOrNull()
         val latestScale = scaleMap.entries.maxByOrNull { it.key }?.value
-        val range = bleController.resolveWeightRange(prefs, valid?.kg)
+        val series = BodyMetricSeries.buildSeries(
+            metric = metric,
+            bodyWeights = list,
+            scaleReadingsByDate = scaleMap,
+            range = range,
+            heightCm = prefs.heightCm
+        )
         HealthUiState(
             bodyWeights = list,
             latestStats = valid,
@@ -65,12 +86,24 @@ class HealthViewModel @Inject constructor(
             savedBannerVisible = saved,
             scaleReadingsByDate = scaleMap,
             latestScaleReading = latestScale,
-            scaleBoundName = prefs.scaleName,
-            scaleBoundMac = prefs.scaleMacAddress,
-            scaleBackgroundEnabled = prefs.scaleBackgroundEnabled,
-            scaleWeightRange = range
+            selectedMetric = metric,
+            selectedRange = range,
+            showWeightOverlay = overlay,
+            metricSeries = series
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HealthUiState())
+
+    fun selectMetric(metric: BodyCompositionMetric) {
+        selectedMetric.value = metric
+    }
+
+    fun selectRange(range: BodyMetricRange) {
+        selectedRange.value = range
+    }
+
+    fun toggleWeightOverlay() {
+        weightOverlay.value = !weightOverlay.value
+    }
 
     fun addBodyWeight(kg: Double, date: LocalDate = LocalDate.now()) {
         viewModelScope.launch {

@@ -19,9 +19,12 @@ class FakeHealthDataSource(
     var sessions: MutableList<HcSession> = mutableListOf(),
     var hrSamples: MutableList<HcHrSample> = mutableListOf(),
     var calorieSlices: MutableList<HcCalorieSlice> = mutableListOf(),
+    var dailyHistory: MutableList<HcDailyActivity> = mutableListOf(),
+    var watchActivities: MutableList<HcWatchActivity> = mutableListOf(),
     var todaySummary: HcTodaySummary = HcTodaySummary(
         date = LocalDate.now(),
         steps = 4520,
+        distanceKm = 3.2,
         activeKcal = 310.0,
         workoutMinutes = 43,
         sleepMinutes = 450,
@@ -66,6 +69,20 @@ class FakeHealthDataSource(
         date: LocalDate,
         originPackage: String?
     ): HcTodaySummary = todaySummary.copy(date = date)
+
+    override suspend fun readDailyActivityHistory(
+        days: Int,
+        originPackage: String?
+    ): List<HcDailyActivity> = dailyHistory.takeLast(days)
+
+    override suspend fun readWatchActivities(
+        start: Instant,
+        end: Instant,
+        originPackage: String?
+    ): List<HcWatchActivity> = watchActivities.filter { w ->
+        (originPackage == null || w.originPackage == originPackage) &&
+            !w.endTime.isBefore(start) && !w.startTime.isAfter(end)
+    }.sortedByDescending { it.startTime }
 
     companion object {
         /** Builds realistic 20s HR and 1-min calorie data across [start, end]. */

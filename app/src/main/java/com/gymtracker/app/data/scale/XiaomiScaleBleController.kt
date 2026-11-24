@@ -14,6 +14,7 @@ import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -48,6 +49,12 @@ class XiaomiScaleBleController @Inject constructor(
     private val bluetoothManager: BluetoothManager?
         get() = context.getSystemService(BluetoothManager::class.java)
 
+    @Volatile
+    private var lastRegisteredMac: String? = null
+
+    @Volatile
+    private var lastSyncAtMs: Long = 0L
+
     fun hasBlePermissions(): Boolean {
         val scanOk = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) ==
             PackageManager.PERMISSION_GRANTED
@@ -58,6 +65,11 @@ class XiaomiScaleBleController @Inject constructor(
 
     fun isBluetoothEnabled(): Boolean =
         bluetoothManager?.adapter?.isEnabled == true
+
+    fun isIgnoringBatteryOptimizations(): Boolean {
+        val pm = context.getSystemService(PowerManager::class.java) ?: return false
+        return pm.isIgnoringBatteryOptimizations(context.packageName)
+    }
 
     fun resolveWeightRange(prefs: UserPreferences, latestWeightKg: Double?): Pair<Double, Double> {
         val minCustom = prefs.scaleMinWeightKg
@@ -145,7 +157,7 @@ class XiaomiScaleBleController @Inject constructor(
     }
 
     @SuppressLint("MissingPermission")
-    suspend fun syncBackgroundScan() {
+    suspend fun syncBackgroundScan(force: Boolean = false) {
         val prefs = prefsRepo.getOnce()
         val mac = prefs.scaleMacAddress?.uppercase(Locale.US)
         if (!prefs.scaleBackgroundEnabled ||
@@ -158,14 +170,20 @@ class XiaomiScaleBleController @Inject constructor(
             return
         }
 
+        val nowMs = System.currentTimeMillis()
+        if (!force && mac == lastRegisteredMac && (nowMs - lastSyncAtMs) < 10_000L) {
+            return
+        }
+
         val scanner = bluetoothManager?.adapter?.bluetoothLeScanner ?: return
         val filters = listOf(
             ScanFilter.Builder()
                 .setDeviceAddress(mac)
                 .build()
         )
+        // Use SCAN_MODE_BALANCED (~2s window) so closed-app wake catches short 3-5s BIA bursts reliably
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
+            .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
             .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
             .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
             .build()
@@ -174,6 +192,8 @@ class XiaomiScaleBleController @Inject constructor(
         try {
             scanner.stopScan(pi)
             scanner.startScan(filters, settings, pi)
+            lastRegisteredMac = mac
+            lastSyncAtMs = nowMs
         } catch (se: SecurityException) {
             Log.w(TAG, "SecurityException starting background BLE scan", se)
         } catch (e: Exception) {
@@ -183,6 +203,8 @@ class XiaomiScaleBleController @Inject constructor(
 
     @SuppressLint("MissingPermission")
     fun stopBackgroundScan() {
+        lastRegisteredMac = null
+        lastSyncAtMs = 0L
         val scanner = bluetoothManager?.adapter?.bluetoothLeScanner ?: return
         try {
             scanner.stopScan(backgroundScanPendingIntent())

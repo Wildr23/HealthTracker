@@ -22,6 +22,7 @@ import com.gymtracker.app.data.db.SyncState
 import com.gymtracker.app.data.db.WorkoutEntity
 import com.gymtracker.app.data.db.WorkoutExerciseEntity
 import com.gymtracker.app.data.db.WorkoutSetEntity
+import com.gymtracker.app.data.health.WatchActivityRepository
 import com.gymtracker.app.data.prefs.UserPreferences
 import com.gymtracker.app.data.prefs.UserPreferencesRepository
 import com.gymtracker.app.data.repo.WorkoutMetricsRecomputer
@@ -44,6 +45,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.io.IOException
@@ -73,6 +75,7 @@ class CloudSyncManager @Inject constructor(
     private val database: GymTrackerDatabase,
     private val prefsRepo: UserPreferencesRepository,
     private val scaleReadingsRepository: ScaleReadingsRepository,
+    private val watchActivityRepository: WatchActivityRepository,
     private val http: SupabaseHttpClient,
     private val metricsRecomputer: WorkoutMetricsRecomputer,
     private val seeder: ExerciseCatalogSeeder
@@ -382,7 +385,31 @@ class CloudSyncManager @Inject constructor(
             }
         })
 
-        // 6. Synced Preferences (convert exerciseGoalsKg keys to slug so goals transfer across phones)
+        // 6. Watch Activities (non-gym sessions from Health Connect / OHealth)
+        val watchSessions = watchActivityRepository.watchActivities.first()
+        uploadBatched(auth, "watch_activities", "user_id,hc_session_id", watchSessions.map { wa ->
+            val stableUuid = UUID.nameUUIDFromBytes("watch_${wa.id}".toByteArray()).toString()
+            buildJsonObject {
+                put("remote_id", stableUuid)
+                put("user_id", auth.userId)
+                put("hc_session_id", wa.id)
+                put("started_at", Instant.ofEpochSecond(wa.startEpochSec).toString())
+                put("ended_at", Instant.ofEpochSecond(wa.endEpochSec).toString())
+                put("duration_sec", wa.durationSec.toInt())
+                putNullableString("title", wa.title)
+                put("exercise_type", wa.exerciseTypeName)
+                put("origin_package", wa.originPackage)
+                putNullableDouble("distance_km", wa.distanceKm)
+                putNullableDouble("active_kcal", wa.activeKcal)
+                putNullableDouble("total_kcal", wa.totalKcal)
+                putNullableInt("avg_hr", wa.avgHr)
+                putNullableInt("max_hr", wa.maxHr)
+                putNullableInt("steps", wa.steps?.toInt())
+                put("updated_at", Instant.ofEpochSecond(wa.endEpochSec).toString())
+            }
+        })
+
+        // 7. Synced Preferences (convert exerciseGoalsKg keys to slug so goals transfer across phones)
         val prefs = prefsRepo.getOnce()
         val slugGoals = prefs.exerciseGoalsKg.mapNotNull { (exId, goal) ->
             exById[exId]?.slug?.let { it to goal }
@@ -392,7 +419,7 @@ class CloudSyncManager @Inject constructor(
             put("height_cm", prefs.heightCm)
             put("birth_year", prefs.birthYear)
             put("is_male", prefs.isMale)
-            put("daily_step_goal", 10000)
+            put("daily_step_goal", prefs.dailyStepGoal)
             put("hr_max", prefs.hrMax)
             put("preferred_formula", prefs.preferredFormula.name)
             put("exercise_goals_json", buildJsonObject {
@@ -749,7 +776,7 @@ class CloudSyncManager @Inject constructor(
 
         remotePrefs.firstOrNull()?.let { pref ->
             val allLocalEx = database.exerciseDao().getAllOnce().associateBy { it.slug }
-            val goalsBySlug = pref["exercise_goals_json"]?.let { el ->
+            val goalsBySlug: Map<String, Double> = pref["exercise_goals_json"]?.let { el ->
                 runCatching {
                     el.jsonObject.entries.mapNotNull { (slug, valEl) ->
                         val localId = allLocalEx[slug]?.id ?: return@mapNotNull null
@@ -759,9 +786,9 @@ class CloudSyncManager @Inject constructor(
                 }.getOrDefault(emptyMap())
             } ?: emptyMap()
 
-            val injuredMap = pref["injured_muscles_json"]?.let { el ->
+            val injuredMap: Map<String, String> = pref["injured_muscles_json"]?.let { el ->
                 runCatching {
-                    el.jsonObject.entries.associate { it.key to it.value.jsonPrimitive.content }
+                    el.jsonObject.entries.associate { (k, v) -> k to v.jsonPrimitive.content }
                 }.getOrDefault(emptyMap())
             } ?: emptyMap()
 
@@ -769,6 +796,7 @@ class CloudSyncManager @Inject constructor(
                 heightCm = pref.int("height_cm") ?: 182,
                 birthYear = pref.int("birth_year") ?: 1993,
                 isMale = pref.bool("is_male") ?: true,
+                dailyStepGoal = pref.int("daily_step_goal") ?: 10000,
                 hrMax = pref.int("hr_max") ?: 185,
                 preferredFormula = pref.enum("preferred_formula", OneRmFormula.EPLEY),
                 exerciseGoalsJson = json.encodeToString(goalsBySlug),

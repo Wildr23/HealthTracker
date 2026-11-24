@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +75,7 @@ fun TodayScreen(
     onOpenWorkoutSummary: (Long) -> Unit,
     onOpenJefitImport: () -> Unit,
     onOpenMuscleRecovery: () -> Unit = {},
+    onOpenWatchActivity: () -> Unit = {},
     viewModel: TodayViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -291,7 +293,10 @@ fun TodayScreen(
 
         // OHealth Watch Summary Card
         item {
-            ObsidianCard(modifier = Modifier.fillMaxWidth()) {
+            ObsidianCard(
+                onClick = onOpenWatchActivity,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Watch, contentDescription = null, tint = ElectricBlue)
@@ -304,6 +309,11 @@ fun TodayScreen(
                         IconButton(onClick = { viewModel.refreshHealth() }) {
                             Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh))
                         }
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = stringResource(R.string.today_watch_details),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     val sum = state.todaySummary
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -312,12 +322,31 @@ fun TodayScreen(
                             value = sum?.steps?.toString() ?: "—"
                         )
                         MetricTile(
+                            label = stringResource(R.string.today_distance),
+                            value = sum?.distanceKm?.let { "${String.format("%.1f", it)} ${stringResource(R.string.unit_km)}" } ?: "—"
+                        )
+                        MetricTile(
                             label = stringResource(R.string.today_active_kcal),
                             value = sum?.activeKcal?.let { "${it.roundToInt()}" } ?: "—"
                         )
                         MetricTile(
                             label = stringResource(R.string.today_sleep),
                             value = sum?.sleepMinutes?.let { "${it / 60}h ${it % 60}m" } ?: "—"
+                        )
+                    }
+                    sum?.steps?.let { steps ->
+                        val goal = state.dailyStepGoal.coerceAtLeast(1000)
+                        val prog = (steps.toFloat() / goal.toFloat()).coerceIn(0f, 1f)
+                        LinearProgressIndicator(
+                            progress = { prog },
+                            color = if (steps >= goal) EmeraldRest else ElectricBlue,
+                            trackColor = CardElevated,
+                            gapSize = 0.dp,
+                            drawStopIndicator = {},
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {

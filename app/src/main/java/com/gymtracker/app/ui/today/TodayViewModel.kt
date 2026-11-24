@@ -10,6 +10,7 @@ import com.gymtracker.app.data.health.HcPermissionState
 import com.gymtracker.app.data.health.HcTodaySummary
 import com.gymtracker.app.data.health.HealthDataSource
 import com.gymtracker.app.data.health.HealthSyncRepository
+import com.gymtracker.app.data.health.WatchActivityRepository
 import com.gymtracker.app.data.prefs.UserPreferences
 import com.gymtracker.app.data.prefs.UserPreferencesRepository
 import com.gymtracker.app.data.repo.WorkoutRepository
@@ -37,6 +38,7 @@ data class TodayUiState(
     val pendingHcCount: Int = 0,
     val permissionState: HcPermissionState? = null,
     val todaySummary: HcTodaySummary? = null,
+    val dailyStepGoal: Int = 10000,
     val tookPreWorkout: Boolean = false,
     val isRefreshingHc: Boolean = false,
     val recovery: MuscleRecoverySnapshot? = null
@@ -49,6 +51,7 @@ class TodayViewModel @Inject constructor(
     routineDao: RoutineDao,
     private val healthDataSource: HealthDataSource,
     private val healthSyncRepository: HealthSyncRepository,
+    private val watchActivityRepository: WatchActivityRepository,
     prefsRepo: UserPreferencesRepository
 ) : ViewModel() {
 
@@ -90,6 +93,7 @@ class TodayViewModel @Inject constructor(
             pendingHcCount = pending,
             permissionState = extra.p,
             todaySummary = extra.s,
+            dailyStepGoal = extra.prefs.dailyStepGoal,
             tookPreWorkout = extra.pw,
             isRefreshingHc = extra.r,
             recovery = recSnapshot
@@ -108,6 +112,7 @@ class TodayViewModel @Inject constructor(
                 permState.value = p
                 if (p.coreReadGranted) {
                     todaySummary.value = healthSyncRepository.getTodaySummary()
+                    watchActivityRepository.syncLastDays(30)
                 }
             }
             refreshing.value = false

@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gymtracker.app.data.cloud.CloudSyncManager
 import com.gymtracker.app.data.cloud.SupabaseAuthResult
+import com.gymtracker.app.data.db.BodyWeightDao
 import com.gymtracker.app.data.health.HcOriginInfo
 import com.gymtracker.app.data.health.HcPermissionState
 import com.gymtracker.app.data.health.HealthDataSource
@@ -15,6 +16,7 @@ import com.gymtracker.app.data.prefs.AppThemeMode
 import com.gymtracker.app.data.prefs.UserPreferences
 import com.gymtracker.app.data.prefs.UserPreferencesRepository
 import com.gymtracker.app.data.repo.BackupRepository
+import com.gymtracker.app.data.scale.XiaomiScaleBleController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,7 +31,9 @@ data class SettingsUiState(
     val hcPermState: HcPermissionState? = null,
     val discoveredOrigins: List<HcOriginInfo> = emptyList(),
     val statusMessage: String? = null,
-    val isSyncingCloud: Boolean = false
+    val isSyncingCloud: Boolean = false,
+    val isIgnoringBatteryOpt: Boolean = false,
+    val scaleWeightRange: Pair<Double, Double> = 93.0 to 117.0
 )
 
 @HiltViewModel
@@ -37,22 +41,36 @@ class SettingsViewModel @Inject constructor(
     private val prefsRepo: UserPreferencesRepository,
     private val healthDataSource: HealthDataSource,
     private val backupRepository: BackupRepository,
-    private val cloudSyncManager: CloudSyncManager
+    private val cloudSyncManager: CloudSyncManager,
+    private val bodyWeightDao: BodyWeightDao,
+    private val scaleBleController: XiaomiScaleBleController
 ) : ViewModel() {
 
     private val hcState = MutableStateFlow<HcPermissionState?>(null)
     private val origins = MutableStateFlow<List<HcOriginInfo>>(emptyList())
     private val statusMsg = MutableStateFlow<String?>(null)
     private val syncingCloud = MutableStateFlow(false)
+    private val batteryOptOk = MutableStateFlow(scaleBleController.isIgnoringBatteryOptimizations())
 
     val uiState: StateFlow<SettingsUiState> = combine(
-        prefsRepo.preferences,
+        combine(prefsRepo.preferences, bodyWeightDao.observeAll()) { p, bw ->
+            val latestValid = bw.firstOrNull { !it.flaggedOutlier }?.kg
+            p to scaleBleController.resolveWeightRange(p, latestValid)
+        },
         hcState,
         origins,
         statusMsg,
-        syncingCloud
-    ) { p, hc, orig, msg, syncing ->
-        SettingsUiState(p, hc, orig, msg, syncing)
+        combine(syncingCloud, batteryOptOk) { s, b -> s to b }
+    ) { (p, range), hc, orig, msg, (syncing, batOk) ->
+        SettingsUiState(
+            prefs = p,
+            hcPermState = hc,
+            discoveredOrigins = orig,
+            statusMessage = msg,
+            isSyncingCloud = syncing,
+            isIgnoringBatteryOpt = batOk,
+            scaleWeightRange = range
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
 
     init {
@@ -60,6 +78,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun refreshHc() {
+        batteryOptOk.value = scaleBleController.isIgnoringBatteryOptimizations()
         viewModelScope.launch {
             runCatching {
                 val st = healthDataSource.getPermissionState()
@@ -69,6 +88,21 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun refreshDeviceStatuses() {
+        refreshHc()
+    }
+
+    fun setScaleBackgroundEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.setScaleBackgroundEnabled(enabled)
+            scaleBleController.syncBackgroundScan(force = true)
+        }
+    }
+
+    fun setDailyStepGoal(goal: Int) {
+        viewModelScope.launch { prefsRepo.setDailyStepGoal(goal) }
     }
 
     fun scanOrigins() {

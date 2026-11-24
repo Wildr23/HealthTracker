@@ -43,14 +43,14 @@ class XiaomiScaleBleReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                handleResults(results)
+                handleResults(context.applicationContext, results)
             } finally {
                 pendingResult.finish()
             }
         }
     }
 
-    private suspend fun handleResults(results: List<ScanResult>) {
+    private suspend fun handleResults(appContext: Context, results: List<ScanResult>) {
         val prefs = prefsRepo.getOnce()
         if (!prefs.scaleBackgroundEnabled) return
         val boundMac = prefs.scaleMacAddress?.uppercase(Locale.US) ?: return
@@ -59,53 +59,92 @@ class XiaomiScaleBleReceiver : BroadcastReceiver() {
 
         val candidates = results.mapNotNull { sr ->
             val mac = sr.device?.address?.uppercase(Locale.US) ?: return@mapNotNull null
-            if (mac != boundMac) return@mapNotNull null
+            if (!mac.equals(boundMac, ignoreCase = true)) return@mapNotNull null
             val serviceData = sr.scanRecord?.serviceData ?: return@mapNotNull null
             val uuidMap = serviceData.entries.associate { it.key.uuid to it.value }
             val parsed = XiaomiScaleBleParser.parseServiceData(uuidMap) ?: return@mapNotNull null
-            if (!parsed.isStabilized || parsed.isRemoved) return@mapNotNull null
             Candidate(parsed, sr.scanRecord?.deviceName ?: prefs.scaleName)
         }
+        if (candidates.isEmpty()) return
 
-        val best = candidates.sortedByDescending { if (it.packet.hasImpedance) 1 else 0 }
-            .firstOrNull() ?: return
+        val nowSec = System.currentTimeMillis() / 1000L
+        prefsRepo.recordScaleWake(nowSec)
 
-        val latestValidWeight = runCatching { bodyWeightDao.getLatestValid()?.kg }.getOrNull()
-        val (minKg, maxKg) = bleController.resolveWeightRange(prefs, latestValidWeight)
-        if (!XiaomiScaleBleParser.isWithinUserRange(best.packet.weightKg, minKg, maxKg)) {
+        val elapsedSec = nowSec - prefs.scaleLastAutoEpochSec
+        if (elapsedSec in 0L..29L && prefs.scaleLastAutoHadImpedance) {
             return
         }
 
-        val nowSec = System.currentTimeMillis() / 1000L
-        val elapsedSec = nowSec - prefs.scaleLastAutoEpochSec
+        val bestStabilized = candidates
+            .filter { it.packet.isStabilized && !it.packet.isRemoved }
+            .sortedByDescending { if (it.packet.hasImpedance) 1 else 0 }
+            .firstOrNull()
 
-        if (best.packet.hasImpedance) {
-            if (elapsedSec in 0L..29L && prefs.scaleLastAutoHadImpedance) return
-        } else {
-            if (elapsedSec in 0L..59L) return
+        val latestValidWeight = runCatching { bodyWeightDao.getLatestValid()?.kg }.getOrNull()
+        val (minKg, maxKg) = bleController.resolveWeightRange(prefs, latestValidWeight)
+
+        if (bestStabilized != null) {
+            if (!XiaomiScaleBleParser.isWithinUserRange(bestStabilized.packet.weightKg, minKg, maxKg)) {
+                prefsRepo.incrementScaleIgnoredFamily()
+                return
+            }
+
+            if (bestStabilized.packet.hasImpedance || bestStabilized.packet.protocol == ScaleProtocol.WEIGHT_SCALE_181D) {
+                val today = LocalDate.now()
+                val age = (today.year - prefs.birthYear).coerceIn(10, 100)
+                val comp = XiaomiBodyCompositionCalculator.calculate(
+                    weightKg = bestStabilized.packet.weightKg,
+                    heightCm = prefs.heightCm,
+                    age = age,
+                    isMale = prefs.isMale,
+                    impedanceOhm = bestStabilized.packet.impedanceOhm
+                )
+                readingsRepository.saveWeighIn(
+                    date = today,
+                    composition = comp,
+                    deviceName = bestStabilized.name ?: prefs.scaleName,
+                    macAddress = boundMac
+                )
+                prefsRepo.recordScaleAutoCapture(
+                    epochSec = nowSec,
+                    hadImpedance = bestStabilized.packet.hasImpedance
+                )
+                bleController.showCapturedNotification(composition = comp, pendingImpedance = false)
+                return
+            }
         }
 
-        val today = LocalDate.now()
-        val age = (today.year - prefs.birthYear).coerceIn(10, 100)
-        val composition = XiaomiBodyCompositionCalculator.calculate(
-            weightKg = best.packet.weightKg,
-            heightCm = prefs.heightCm,
-            age = age,
-            isMale = prefs.isMale,
-            impedanceOhm = best.packet.impedanceOhm
-        )
+        // Only wake the 25s LOW_LATENCY burst service for active non-removed weigh-in packets
+        val hasActivePacket = candidates.any { !it.packet.isRemoved }
+        if (!hasActivePacket) return
 
-        readingsRepository.saveWeighIn(
-            date = today,
-            composition = composition,
-            deviceName = best.name ?: prefs.scaleName,
-            macAddress = boundMac
-        )
-        prefsRepo.recordScaleAutoCapture(epochSec = nowSec, hadImpedance = best.packet.hasImpedance)
-        bleController.showCapturedNotification(
-            composition = composition,
-            pendingImpedance = !best.packet.hasImpedance &&
-                best.packet.protocol == ScaleProtocol.BODY_COMPOSITION_181B
-        )
+        val startedService = runCatching {
+            XiaomiScaleCaptureService.startBurst(appContext)
+            true
+        }.getOrDefault(false)
+
+        if (!startedService && bestStabilized != null && elapsedSec !in 0L..59L) {
+            // Fallback when background FGS start is blocked by OS
+            val today = LocalDate.now()
+            val age = (today.year - prefs.birthYear).coerceIn(10, 100)
+            val comp = XiaomiBodyCompositionCalculator.calculate(
+                weightKg = bestStabilized.packet.weightKg,
+                heightCm = prefs.heightCm,
+                age = age,
+                isMale = prefs.isMale,
+                impedanceOhm = bestStabilized.packet.impedanceOhm
+            )
+            readingsRepository.saveWeighIn(
+                date = today,
+                composition = comp,
+                deviceName = bestStabilized.name ?: prefs.scaleName,
+                macAddress = boundMac
+            )
+            prefsRepo.recordScaleAutoCapture(epochSec = nowSec, hadImpedance = false)
+            bleController.showCapturedNotification(
+                composition = comp,
+                pendingImpedance = bestStabilized.packet.protocol == ScaleProtocol.BODY_COMPOSITION_181B
+            )
+        }
     }
 }

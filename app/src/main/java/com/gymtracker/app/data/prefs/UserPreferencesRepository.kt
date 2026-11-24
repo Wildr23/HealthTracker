@@ -57,6 +57,9 @@ data class UserPreferences(
     val scaleMaxWeightKg: Double? = null,
     val scaleLastAutoEpochSec: Long = 0L,
     val scaleLastAutoHadImpedance: Boolean = false,
+    val scaleLastWakeEpochSec: Long = 0L,
+    val scaleIgnoredFamilyCount: Int = 0,
+    val dailyStepGoal: Int = 10000,
     val supabaseUrl: String = BuildConfig.SUPABASE_URL,
     val supabasePublishableKey: String = BuildConfig.SUPABASE_PUBLISHABLE_KEY,
     val supabaseUserEmail: String? = null,
@@ -95,6 +98,9 @@ class UserPreferencesRepository @Inject constructor(
         val SCALE_MAX_KG = doublePreferencesKey("scale_max_weight_kg")
         val SCALE_LAST_AUTO_SEC = longPreferencesKey("scale_last_auto_epoch_sec")
         val SCALE_LAST_AUTO_IMP = booleanPreferencesKey("scale_last_auto_had_imp")
+        val SCALE_LAST_WAKE_SEC = longPreferencesKey("scale_last_wake_epoch_sec")
+        val SCALE_IGNORED_FAMILY = intPreferencesKey("scale_ignored_family_count")
+        val DAILY_STEP_GOAL = intPreferencesKey("daily_step_goal")
         val SUPABASE_URL = stringPreferencesKey("supabase_url")
         val SUPABASE_KEY = stringPreferencesKey("supabase_publishable_key")
         val SUPABASE_EMAIL = stringPreferencesKey("supabase_user_email")
@@ -141,6 +147,9 @@ class UserPreferencesRepository @Inject constructor(
             scaleMaxWeightKg = prefs[Keys.SCALE_MAX_KG],
             scaleLastAutoEpochSec = prefs[Keys.SCALE_LAST_AUTO_SEC] ?: 0L,
             scaleLastAutoHadImpedance = prefs[Keys.SCALE_LAST_AUTO_IMP] ?: false,
+            scaleLastWakeEpochSec = prefs[Keys.SCALE_LAST_WAKE_SEC] ?: 0L,
+            scaleIgnoredFamilyCount = prefs[Keys.SCALE_IGNORED_FAMILY] ?: 0,
+            dailyStepGoal = prefs[Keys.DAILY_STEP_GOAL] ?: 10000,
             supabaseUrl = prefs[Keys.SUPABASE_URL]?.takeIf { it.isNotBlank() } ?: BuildConfig.SUPABASE_URL,
             supabasePublishableKey = prefs[Keys.SUPABASE_KEY]?.takeIf { it.isNotBlank() }
                 ?: BuildConfig.SUPABASE_PUBLISHABLE_KEY,
@@ -217,6 +226,25 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
+    suspend fun recordScaleWake(epochSec: Long) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.SCALE_LAST_WAKE_SEC] = epochSec
+        }
+    }
+
+    suspend fun incrementScaleIgnoredFamily() {
+        context.dataStore.edit { prefs ->
+            val cur = prefs[Keys.SCALE_IGNORED_FAMILY] ?: 0
+            prefs[Keys.SCALE_IGNORED_FAMILY] = cur + 1
+        }
+    }
+
+    suspend fun setDailyStepGoal(goal: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.DAILY_STEP_GOAL] = goal.coerceIn(1000, 50000)
+        }
+    }
+
     suspend fun setSupabaseConfig(url: String, publishableKey: String) {
         context.dataStore.edit { prefs ->
             val trimmedUrl = url.trim().trimEnd('/')
@@ -269,6 +297,7 @@ class UserPreferencesRepository @Inject constructor(
         heightCm: Int,
         birthYear: Int,
         isMale: Boolean,
+        dailyStepGoal: Int,
         hrMax: Int,
         preferredFormula: OneRmFormula,
         exerciseGoalsJson: String,
@@ -280,6 +309,7 @@ class UserPreferencesRepository @Inject constructor(
             prefs[Keys.HEIGHT_CM] = heightCm.coerceIn(100, 240)
             prefs[Keys.BIRTH_YEAR] = birthYear.coerceIn(1920, 2020)
             prefs[Keys.IS_MALE] = isMale
+            prefs[Keys.DAILY_STEP_GOAL] = dailyStepGoal.coerceIn(1000, 50000)
             prefs[Keys.HR_MAX] = hrMax.coerceIn(120, 230)
             prefs[Keys.FORMULA] = preferredFormula.name
             prefs[Keys.EXERCISE_GOALS_JSON] = exerciseGoalsJson

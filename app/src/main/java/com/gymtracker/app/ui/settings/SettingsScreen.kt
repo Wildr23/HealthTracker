@@ -4,6 +4,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,9 +19,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Backup
-import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudQueue
@@ -58,25 +60,28 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.health.connect.client.PermissionController
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gymtracker.app.R
 import com.gymtracker.app.data.prefs.AppLanguage
 import com.gymtracker.app.data.prefs.AppThemeMode
 import com.gymtracker.app.ui.common.formatInstantShort
+import com.gymtracker.app.ui.scale.ScaleBadgePill
+import com.gymtracker.app.ui.theme.CoralEnergy
 import com.gymtracker.app.ui.theme.ElectricBlue
 import com.gymtracker.app.ui.theme.EmeraldRest
+import com.gymtracker.app.ui.theme.GoldPr
 import com.gymtracker.app.ui.theme.ObsidianCard
 import java.time.Instant
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenJefitImport: () -> Unit,
-    onOpenXiaomiScale: () -> Unit = {},
+    onOpenConnectedDevices: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -87,12 +92,6 @@ fun SettingsScreen(
             snackbarHostState.showSnackbar(msg)
             viewModel.clearStatusMessage()
         }
-    }
-
-    val permLauncher = rememberLauncherForActivityResult(
-        contract = PermissionController.createRequestPermissionResultContract()
-    ) {
-        viewModel.refreshHc()
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -162,100 +161,60 @@ fun SettingsScreen(
                 }
             }
 
-            // Health Connect & Watch Source
+            // Connected Devices Hub (Watch HC + Xiaomi Scale BLE)
             item {
-                SectionLabel(stringResource(R.string.settings_hc_section))
-                ObsidianCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val hc = state.hcPermState
-                        if (hc != null) {
-                            PermRow(stringResource(R.string.settings_hc_core), hc.coreReadGranted, supported = true)
-                            PermRow(stringResource(R.string.settings_hc_history), hc.historyGranted, hc.historySupported)
-                            PermRow(stringResource(R.string.settings_hc_bg), hc.backgroundGranted, hc.backgroundSupported)
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    val req = viewModel.permissionsToRequest()
-                                    if (req.isNotEmpty()) permLauncher.launch(req)
-                                },
-                                shape = RoundedCornerShape(20.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(stringResource(R.string.today_grant_hc), maxLines = 1)
-                            }
-                            OutlinedButton(
-                                onClick = { viewModel.scanOrigins() },
-                                shape = RoundedCornerShape(20.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(stringResource(R.string.settings_discover_sources), maxLines = 1)
-                            }
-                        }
-                        Text(
-                            text = stringResource(
-                                R.string.settings_watch_source_label,
-                                state.prefs.watchSourcePackage ?: "Auto"
-                            ),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = ElectricBlue
-                        )
-                        state.discoveredOrigins.forEach { orig ->
-                            FilterChip(
-                                selected = state.prefs.watchSourcePackage == orig.packageName,
-                                onClick = { viewModel.selectOrigin(orig.packageName) },
-                                leadingIcon = { Icon(Icons.Default.Watch, contentDescription = null) },
-                                label = {
-                                    Text("${orig.packageName} (${orig.sessionCount}s / ${orig.hrRecordCount}hr)")
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Xiaomi Smart Scale (BLE)
-            item {
-                SectionLabel(stringResource(R.string.scale_card_title))
-                ObsidianCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(
+                LaunchedEffect(Unit) { viewModel.refreshDeviceStatuses() }
+                SectionLabel(stringResource(R.string.devices_title))
+                ObsidianCard(
+                    onClick = onOpenConnectedDevices,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
                         modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = if (state.prefs.scaleMacAddress != null) {
-                                stringResource(
-                                    R.string.scale_bound_active,
-                                    state.prefs.scaleName ?: "Xiaomi Scale",
-                                    state.prefs.scaleMacAddress!!
-                                )
-                            } else {
-                                stringResource(R.string.scale_settings_card_desc)
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (state.prefs.scaleMacAddress != null) EmeraldRest else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Button(
-                            onClick = onOpenXiaomiScale,
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Bluetooth, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
+                        Icon(Icons.Default.Watch, contentDescription = null, tint = ElectricBlue)
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
-                                text = if (state.prefs.scaleMacAddress != null) {
-                                    stringResource(R.string.scale_action_weigh_in)
-                                } else {
-                                    stringResource(R.string.scale_action_setup)
-                                },
-                                maxLines = 1
+                                text = stringResource(R.string.devices_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
                             )
+                            Text(
+                                text = stringResource(R.string.devices_settings_card_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (state.hcPermState?.coreReadGranted == true) {
+                                    ScaleBadgePill(stringResource(R.string.devices_watch_chip_ok), EmeraldRest)
+                                } else {
+                                    ScaleBadgePill(stringResource(R.string.settings_not_granted), GoldPr)
+                                }
+                                if (state.prefs.scaleMacAddress != null) {
+                                    ScaleBadgePill(stringResource(R.string.devices_scale_chip_ok), ElectricBlue)
+                                }
+                                if (state.prefs.scaleMacAddress != null && state.prefs.scaleBackgroundEnabled) {
+                                    ScaleBadgePill(
+                                        text = if (state.isIgnoringBatteryOpt) {
+                                            stringResource(R.string.devices_bg_chip_ok)
+                                        } else {
+                                            stringResource(R.string.scale_battery_warn_chip)
+                                        },
+                                        color = if (state.isIgnoringBatteryOpt) EmeraldRest else GoldPr
+                                    )
+                                }
+                            }
                         }
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -465,17 +424,19 @@ fun SettingsScreen(
                                     onClick = { viewModel.signInSupabase(emailText, passwordText) },
                                     enabled = !state.isSyncingCloud && emailText.isNotBlank() && passwordText.length >= 6,
                                     shape = RoundedCornerShape(20.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(stringResource(R.string.cloud_sign_in), maxLines = 1)
+                                    Text(stringResource(R.string.cloud_sign_in), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 OutlinedButton(
                                     onClick = { viewModel.signUpSupabase(emailText, passwordText) },
                                     enabled = !state.isSyncingCloud && emailText.isNotBlank() && passwordText.length >= 6,
                                     shape = RoundedCornerShape(20.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(stringResource(R.string.cloud_sign_up), maxLines = 1)
+                                    Text(stringResource(R.string.cloud_sign_up), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         } else {
@@ -557,21 +518,4 @@ private fun SectionLabel(text: String) {
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(bottom = 4.dp, start = 4.dp)
     )
-}
-
-@Composable
-private fun PermRow(label: String, granted: Boolean, supported: Boolean) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label)
-        val status = when {
-            !supported -> stringResource(R.string.settings_unsupported)
-            granted -> stringResource(R.string.settings_connected)
-            else -> stringResource(R.string.settings_not_granted)
-        }
-        Text(
-            text = status,
-            fontWeight = FontWeight.SemiBold,
-            color = if (granted) EmeraldRest else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
 }

@@ -5,6 +5,7 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
@@ -17,6 +18,7 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.DataOrigin
+import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -27,6 +29,7 @@ import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.Period
 import java.time.ZoneId
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -51,6 +54,7 @@ class HealthConnectDataSource @Inject constructor(
         HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
         HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
         HealthPermission.getReadPermission(StepsRecord::class),
+        HealthPermission.getReadPermission(DistanceRecord::class),
         HealthPermission.getReadPermission(SleepSessionRecord::class),
         HealthPermission.getReadPermission(OxygenSaturationRecord::class),
         HealthPermission.getReadPermission(SkinTemperatureRecord::class),
@@ -101,7 +105,8 @@ class HealthConnectDataSource @Inject constructor(
             historyGranted = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted,
             historySupported = historySupported,
             backgroundGranted = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in granted,
-            backgroundSupported = bgSupported
+            backgroundSupported = bgSupported,
+            distanceReadGranted = HealthPermission.getReadPermission(DistanceRecord::class) in granted
         )
     }
 
@@ -247,6 +252,7 @@ class HealthConnectDataSource @Inject constructor(
                 AggregateRequest(
                     metrics = setOf(
                         StepsRecord.COUNT_TOTAL,
+                        DistanceRecord.DISTANCE_TOTAL,
                         ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL,
                         ExerciseSessionRecord.EXERCISE_DURATION_TOTAL
                     ),
@@ -285,6 +291,7 @@ class HealthConnectDataSource @Inject constructor(
         HcTodaySummary(
             date = date,
             steps = aggDay?.get(StepsRecord.COUNT_TOTAL),
+            distanceKm = aggDay?.get(DistanceRecord.DISTANCE_TOTAL)?.inKilometers,
             activeKcal = aggDay?.get(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL)?.inKilocalories,
             workoutMinutes = aggDay?.get(ExerciseSessionRecord.EXERCISE_DURATION_TOTAL)?.toMinutes(),
             sleepMinutes = sleepDurationMin,
@@ -292,6 +299,96 @@ class HealthConnectDataSource @Inject constructor(
             latestRestingHr = latestRhr,
             latestWeightKg = latestWeight
         )
+    }
+
+    override suspend fun readDailyActivityHistory(
+        days: Int,
+        originPackage: String?
+    ): List<HcDailyActivity> = withContext(Dispatchers.IO) {
+        val client = clientOrNull() ?: return@withContext emptyList()
+        val safeDays = days.coerceIn(1, 90)
+        val today = LocalDate.now()
+        val startDate = today.minusDays((safeDays - 1).toLong())
+        val filter = originPackage?.let { setOf(DataOrigin(it)) } ?: emptySet()
+
+        val bucketsByDate = runCatching {
+            client.aggregateGroupByPeriod(
+                AggregateGroupByPeriodRequest(
+                    metrics = setOf(
+                        StepsRecord.COUNT_TOTAL,
+                        DistanceRecord.DISTANCE_TOTAL,
+                        ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL,
+                        ExerciseSessionRecord.EXERCISE_DURATION_TOTAL
+                    ),
+                    timeRangeFilter = TimeRangeFilter.between(
+                        startDate.atStartOfDay(),
+                        today.plusDays(1).atStartOfDay()
+                    ),
+                    timeRangeSlicer = Period.ofDays(1),
+                    dataOriginFilter = filter
+                )
+            ).associateBy { it.startTime.toLocalDate() }
+        }.getOrDefault(emptyMap())
+
+        (0 until safeDays).map { offset ->
+            val d = startDate.plusDays(offset.toLong())
+            val res = bucketsByDate[d]?.result
+            HcDailyActivity(
+                date = d,
+                steps = res?.get(StepsRecord.COUNT_TOTAL) ?: 0L,
+                distanceKm = res?.get(DistanceRecord.DISTANCE_TOTAL)?.inKilometers ?: 0.0,
+                activeKcal = res?.get(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL)?.inKilocalories ?: 0.0,
+                workoutMinutes = res?.get(ExerciseSessionRecord.EXERCISE_DURATION_TOTAL)?.toMinutes() ?: 0L
+            )
+        }
+    }
+
+    override suspend fun readWatchActivities(
+        start: Instant,
+        end: Instant,
+        originPackage: String?
+    ): List<HcWatchActivity> = withContext(Dispatchers.IO) {
+        val client = clientOrNull() ?: return@withContext emptyList()
+        val filter = originPackage?.let { setOf(DataOrigin(it)) } ?: emptySet()
+        val sessions = runCatching {
+            readPaged(client, ExerciseSessionRecord::class, start, end, filter)
+                .filter { !isIgnoredOrigin(it.metadata.dataOrigin.packageName) }
+        }.getOrDefault(emptyList())
+
+        sessions.sortedByDescending { it.startTime }.map { rec ->
+            val agg = runCatching {
+                client.aggregate(
+                    AggregateRequest(
+                        metrics = setOf(
+                            DistanceRecord.DISTANCE_TOTAL,
+                            ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL,
+                            TotalCaloriesBurnedRecord.ENERGY_TOTAL,
+                            StepsRecord.COUNT_TOTAL,
+                            HeartRateRecord.BPM_AVG,
+                            HeartRateRecord.BPM_MAX
+                        ),
+                        timeRangeFilter = TimeRangeFilter.between(rec.startTime, rec.endTime),
+                        dataOriginFilter = setOf(rec.metadata.dataOrigin)
+                    )
+                )
+            }.getOrNull()
+
+            HcWatchActivity(
+                id = rec.metadata.id,
+                startTime = rec.startTime,
+                endTime = rec.endTime,
+                durationSec = Duration.between(rec.startTime, rec.endTime).seconds.coerceAtLeast(1L),
+                title = rec.title,
+                exerciseTypeName = exerciseTypeLabel(rec.exerciseType),
+                originPackage = rec.metadata.dataOrigin.packageName,
+                distanceKm = agg?.get(DistanceRecord.DISTANCE_TOTAL)?.inKilometers?.takeIf { it > 0.005 },
+                activeKcal = agg?.get(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL)?.inKilocalories?.takeIf { it > 0.5 },
+                totalKcal = agg?.get(TotalCaloriesBurnedRecord.ENERGY_TOTAL)?.inKilocalories?.takeIf { it > 0.5 },
+                avgHr = agg?.get(HeartRateRecord.BPM_AVG)?.toInt(),
+                maxHr = agg?.get(HeartRateRecord.BPM_MAX)?.toInt(),
+                steps = agg?.get(StepsRecord.COUNT_TOTAL)?.takeIf { it > 0L }
+            )
+        }
     }
 
     private suspend fun <T : Record> readPaged(
@@ -339,9 +436,21 @@ class HealthConnectDataSource @Inject constructor(
             ExerciseSessionRecord.EXERCISE_TYPE_RUNNING -> "RUNNING"
             ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL -> "RUNNING_TREADMILL"
             ExerciseSessionRecord.EXERCISE_TYPE_WALKING -> "WALKING"
+            ExerciseSessionRecord.EXERCISE_TYPE_HIKING -> "HIKING"
             ExerciseSessionRecord.EXERCISE_TYPE_BIKING -> "BIKING"
+            ExerciseSessionRecord.EXERCISE_TYPE_BIKING_STATIONARY -> "BIKING_STATIONARY"
             ExerciseSessionRecord.EXERCISE_TYPE_ROWING_MACHINE -> "ROWING_MACHINE"
             ExerciseSessionRecord.EXERCISE_TYPE_ELLIPTICAL -> "ELLIPTICAL"
+            ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL -> "SWIMMING_POOL"
+            ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_OPEN_WATER -> "SWIMMING_OPEN_WATER"
+            ExerciseSessionRecord.EXERCISE_TYPE_STAIR_CLIMBING -> "STAIR_CLIMBING"
+            ExerciseSessionRecord.EXERCISE_TYPE_STAIR_CLIMBING_MACHINE -> "STAIR_CLIMBING"
+            ExerciseSessionRecord.EXERCISE_TYPE_HIGH_INTENSITY_INTERVAL_TRAINING -> "HIIT"
+            ExerciseSessionRecord.EXERCISE_TYPE_YOGA -> "YOGA"
+            ExerciseSessionRecord.EXERCISE_TYPE_BADMINTON -> "BADMINTON"
+            ExerciseSessionRecord.EXERCISE_TYPE_SOCCER -> "SOCCER"
+            ExerciseSessionRecord.EXERCISE_TYPE_TENNIS -> "TENNIS"
+            ExerciseSessionRecord.EXERCISE_TYPE_SKIING -> "SKIING"
             ExerciseSessionRecord.EXERCISE_TYPE_OTHER_WORKOUT -> "WORKOUT"
             else -> "TYPE_$type"
         }

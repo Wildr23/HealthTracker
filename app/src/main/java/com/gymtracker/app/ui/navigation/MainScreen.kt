@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Medication
+import androidx.compose.material.icons.filled.MonitorWeight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +38,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.gymtracker.app.R
+import com.gymtracker.app.ui.activity.WatchActivityScreen
 import com.gymtracker.app.ui.exercise.ExerciseDetailScreen
 import com.gymtracker.app.ui.gym.GymScreen
 import com.gymtracker.app.ui.health.HealthScreen
@@ -44,6 +46,7 @@ import com.gymtracker.app.ui.importcsv.JefitImportScreen
 import com.gymtracker.app.ui.insights.InsightsScreen
 import com.gymtracker.app.ui.recovery.MuscleRecoveryScreen
 import com.gymtracker.app.ui.scale.XiaomiScaleScreen
+import com.gymtracker.app.ui.settings.ConnectedDevicesScreen
 import com.gymtracker.app.ui.settings.SettingsScreen
 import com.gymtracker.app.ui.stack.StackScreen
 import com.gymtracker.app.ui.summary.WorkoutSummaryScreen
@@ -97,6 +100,15 @@ fun GymTrackerApp(
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                     title = { Text(stringResource(currentTopTab.labelRes), style = MaterialTheme.typography.headlineSmall) },
                     actions = {
+                        if (currentRoute == Routes.HEALTH) {
+                            IconButton(onClick = { navController.navigate(Routes.XIAOMI_SCALE) }) {
+                                Icon(
+                                    Icons.Default.MonitorWeight,
+                                    contentDescription = stringResource(R.string.scale_action_weigh_in),
+                                    tint = ElectricBlue
+                                )
+                            }
+                        }
                         IconButton(onClick = { navController.navigate(Routes.SETTINGS) }) {
                             Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings_title))
                         }
@@ -151,7 +163,8 @@ fun GymTrackerApp(
                     onOpenActiveWorkout = { wId -> navController.navigate(Routes.activeWorkout(wId)) },
                     onOpenWorkoutSummary = { wId -> navController.navigate(Routes.workoutSummary(wId)) },
                     onOpenJefitImport = { navController.navigate(Routes.JEFIT_IMPORT) },
-                    onOpenMuscleRecovery = { navController.navigate(Routes.MUSCLE_RECOVERY) }
+                    onOpenMuscleRecovery = { navController.navigate(Routes.MUSCLE_RECOVERY) },
+                    onOpenWatchActivity = { navController.navigate(Routes.WATCH_ACTIVITY) }
                 )
             }
             composable(Routes.GYM) {
@@ -159,11 +172,18 @@ fun GymTrackerApp(
                     onOpenActiveWorkout = { wId -> navController.navigate(Routes.activeWorkout(wId)) },
                     onOpenWorkoutSummary = { wId -> navController.navigate(Routes.workoutSummary(wId)) },
                     onOpenExerciseDetail = { exId -> navController.navigate(Routes.exerciseDetail(exId)) },
-                    onOpenMuscleRecovery = { navController.navigate(Routes.MUSCLE_RECOVERY) }
+                    onOpenMuscleRecovery = { navController.navigate(Routes.MUSCLE_RECOVERY) },
+                    onOpenWatchActivity = { navController.navigate(Routes.WATCH_ACTIVITY) }
                 )
             }
             composable(Routes.MUSCLE_RECOVERY) {
                 MuscleRecoveryScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.WATCH_ACTIVITY) {
+                WatchActivityScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenConnectedDevices = { navController.navigate(Routes.CONNECTED_DEVICES) }
+                )
             }
             composable(Routes.STACK) { StackScreen() }
             composable(Routes.HEALTH) {
@@ -177,6 +197,12 @@ fun GymTrackerApp(
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenJefitImport = { navController.navigate(Routes.JEFIT_IMPORT) },
+                    onOpenConnectedDevices = { navController.navigate(Routes.CONNECTED_DEVICES) }
+                )
+            }
+            composable(Routes.CONNECTED_DEVICES) {
+                ConnectedDevicesScreen(
+                    onBack = { navController.popBackStack() },
                     onOpenXiaomiScale = { navController.navigate(Routes.XIAOMI_SCALE) }
                 )
             }

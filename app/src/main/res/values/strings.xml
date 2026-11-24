@@ -23,6 +23,7 @@
     <string name="action_finish">Finish</string>
     <string name="action_resume">Resume</string>
     <string name="action_start">Start</string>
+    <string name="action_setup">Setup</string>
 
     <!-- Units & Short Labels -->
     <string name="unit_kg">kg</string>
@@ -517,4 +518,65 @@
     <string name="cloud_sync_now">Sync All to Cloud</string>
     <string name="cloud_restore_now">Restore from Cloud</string>
     <string name="cloud_syncing">Syncing with Supabase…</string>
+
+    <!-- v1.4.0 Watch Activities, Connected Devices, Scale Battery & Body Analytics -->
+    <string name="scale_burst_notif_text">Reading weight &amp; bioimpedance…</string>
+    <string name="scale_battery_warn_title">Set battery to Unrestricted for background capture</string>
+    <string name="scale_battery_warn_desc">Samsung One UI can sleep closed apps. Choose Battery → Unrestricted so Xiaomi scale auto-saves reliably.</string>
+    <string name="scale_battery_ok">Battery: Unrestricted ✓</string>
+    <string name="scale_battery_action">Set Unrestricted</string>
+    <string name="scale_battery_warn_chip">Battery ⚠️</string>
+    <string name="devices_title">Connected Devices</string>
+    <string name="devices_subtitle">OnePlus Watch 3 (OHealth) &amp; Xiaomi Smart Scale</string>
+    <string name="devices_watch_section">Smartwatch &amp; Health Connect</string>
+    <string name="devices_distance_perm">Distance &amp; Pace (Walk, Run, Bike)</string>
+    <string name="devices_step_goal">Daily Step Goal</string>
+    <string name="devices_scale_section">Xiaomi Smart Scale (XMTZC05HM)</string>
+    <string name="devices_last_wake">Last BLE wake: %1$s</string>
+    <string name="devices_ignored_family">Family weigh-ins skipped: %1$d</string>
+    <string name="devices_open_scale_screen">Open Live Scale &amp; Filters</string>
+    <string name="devices_settings_card_desc">Watch (OHealth / Health Connect) &amp; Xiaomi Smart Scale (BLE)</string>
+    <string name="devices_watch_chip_ok">Watch ✓</string>
+    <string name="devices_scale_chip_ok">Scale ✓</string>
+    <string name="devices_bg_chip_ok">Background ✓</string>
+    <string name="watch_activity_title">Watch Activity</string>
+    <string name="watch_activity_tab_steps">Steps</string>
+    <string name="watch_activity_tab_distance">Distance</string>
+    <string name="watch_activity_tab_kcal">Calories</string>
+    <string name="watch_activity_days_7">7D</string>
+    <string name="watch_activity_days_14">14D</string>
+    <string name="watch_activity_days_30">30D</string>
+    <string name="watch_activity_avg_day">Avg / day</string>
+    <string name="watch_activity_total">Total</string>
+    <string name="watch_activity_goal_days">Goal met</string>
+    <string name="watch_activity_sessions_header">Walks, Runs &amp; Cardio</string>
+    <string name="watch_filter_all">All</string>
+    <string name="watch_filter_walk">Walk</string>
+    <string name="watch_filter_run">Run</string>
+    <string name="watch_filter_bike">Bike</string>
+    <string name="watch_filter_other">Other</string>
+    <string name="watch_activity_empty">No watch activities synced yet. Tap refresh after walking or running with your watch.</string>
+    <string name="watch_distance_banner">Grant Distance permission in Connected Devices to see km &amp; pace.</string>
+    <string name="watch_type_walk">Outdoor Walk</string>
+    <string name="watch_type_hike">Hiking</string>
+    <string name="watch_type_run">Outdoor Run</string>
+    <string name="watch_type_treadmill">Treadmill Run</string>
+    <string name="watch_type_bike">Outdoor Cycling</string>
+    <string name="watch_type_bike_indoor">Indoor Cycling</string>
+    <string name="watch_type_swim">Swimming</string>
+    <string name="watch_type_stairs">Stair Climbing</string>
+    <string name="watch_type_hiit">HIIT</string>
+    <string name="watch_type_yoga">Yoga</string>
+    <string name="watch_type_elliptical">Elliptical</string>
+    <string name="watch_type_rowing">Rowing</string>
+    <string name="watch_type_other">Watch Workout</string>
+    <string name="today_distance">Distance</string>
+    <string name="today_watch_details">Activity</string>
+    <string name="progress_watch_activities">Steps, Walks &amp; Runs from Watch</string>
+    <string name="health_tab_body_analytics">Body Analytics</string>
+    <string name="body_compare_weight">Compare Weight</string>
+    <string name="body_metric_current">Current</string>
+    <string name="body_metric_delta">Change</string>
+    <string name="body_metric_avg">Avg</string>
+    <string name="body_need_more_points">Step on the scale at least twice to plot this composition trend line.</string>
 </resources>

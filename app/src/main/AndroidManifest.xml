@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
     <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
     <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
     <uses-permission android:name="android.permission.health.READ_SKIN_TEMPERATURE" />
@@ -17,10 +18,12 @@
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
 
-    <!-- Active workout foreground timer service & notifications -->
+    <!-- Active workout foreground timer & Xiaomi BLE capture service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Direct Xiaomi Smart Scale BLE broadcast capture -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
@@ -95,6 +98,11 @@
             android:name=".work.WorkoutTimerService"
             android:exported="false"
             android:foregroundServiceType="health" />
+
+        <service
+            android:name=".data.scale.XiaomiScaleCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
 
         <receiver
             android:name=".data.scale.XiaomiScaleBleReceiver"

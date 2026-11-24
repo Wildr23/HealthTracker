@@ -108,6 +108,7 @@ fun GymScreen(
     onOpenWorkoutSummary: (Long) -> Unit,
     onOpenExerciseDetail: (Long) -> Unit,
     onOpenMuscleRecovery: () -> Unit = {},
+    onOpenWatchActivity: () -> Unit = {},
     viewModel: GymViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -153,7 +154,8 @@ fun GymScreen(
                 onToggleExternal = viewModel::setShowExternalCardio,
                 onRefreshPending = viewModel::refreshPendingHc,
                 onOpenWorkout = onOpenWorkoutSummary,
-                onOpenRecovery = onOpenMuscleRecovery
+                onOpenRecovery = onOpenMuscleRecovery,
+                onOpenWatchActivity = onOpenWatchActivity
             )
         }
     }
@@ -635,7 +637,8 @@ private fun ProgressTab(
     onToggleExternal: (Boolean) -> Unit,
     onRefreshPending: () -> Unit,
     onOpenWorkout: (Long) -> Unit,
-    onOpenRecovery: () -> Unit
+    onOpenRecovery: () -> Unit,
+    onOpenWatchActivity: () -> Unit
 ) {
     var displayedMonth by remember { mutableStateOf(YearMonth.now()) }
     val kpi = state.weeklyKpis
@@ -739,6 +742,30 @@ private fun ProgressTab(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Watch Walks, Runs & Steps Shortcut Card (kept isolated from gym tonnage & 1RM)
+        item {
+            ObsidianCard(onClick = onOpenWatchActivity, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Default.Watch, contentDescription = null, tint = ElectricBlue)
+                    Text(
+                        text = stringResource(R.string.progress_watch_activities),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
