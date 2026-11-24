@@ -1,0 +1,526 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GymTracker OS</string>
+
+    <!-- Tabs & Navigation -->
+    <string name="tab_today">Сьогодні</string>
+    <string name="tab_gym">Зал</string>
+    <string name="tab_stack">Стек</string>
+    <string name="tab_health">Здоров\'я</string>
+    <string name="tab_insights">Інсайти</string>
+    <string name="settings_title">Налаштування</string>
+
+    <!-- Common Actions -->
+    <string name="action_close">Закрити</string>
+    <string name="action_cancel">Скасувати</string>
+    <string name="action_save">Зберегти</string>
+    <string name="action_delete">Видалити</string>
+    <string name="action_refresh">Оновити</string>
+    <string name="action_add">Додати</string>
+    <string name="action_back">Назад</string>
+    <string name="action_confirm">Підтвердити</string>
+    <string name="action_skip">Пропустити</string>
+    <string name="action_finish">Завершити</string>
+    <string name="action_resume">Продовжити</string>
+    <string name="action_start">Почати</string>
+
+    <!-- Units & Short Labels -->
+    <string name="unit_kg">кг</string>
+    <string name="unit_kcal">ккал</string>
+    <string name="unit_bpm">уд/хв</string>
+    <string name="unit_min">хв</string>
+    <string name="unit_sec">с</string>
+    <string name="unit_km">км</string>
+    <string name="unit_t">т</string>
+
+    <plurals name="sets_count">
+        <item quantity="one">%d підхід</item>
+        <item quantity="few">%d підходи</item>
+        <item quantity="many">%d підходів</item>
+        <item quantity="other">%d підходів</item>
+    </plurals>
+    <plurals name="workouts_count">
+        <item quantity="one">%d тренування</item>
+        <item quantity="few">%d тренування</item>
+        <item quantity="many">%d тренувань</item>
+        <item quantity="other">%d тренувань</item>
+    </plurals>
+    <plurals name="months_count">
+        <item quantity="one">%d місяць</item>
+        <item quantity="few">%d місяці</item>
+        <item quantity="many">%d місяців</item>
+        <item quantity="other">%d місяців</item>
+    </plurals>
+
+    <!-- Notifications / Workers -->
+    <string name="channel_workout_name">Таймер тренування</string>
+    <string name="channel_sync_name">Синхронізація Health Connect</string>
+    <string name="active_workout_title">Активне тренування</string>
+    <string name="workout_notif_elapsed">Час: %1$s</string>
+    <string name="workout_notif_with_rest">Час: %1$s • Відпочинок: %2$s</string>
+    <string name="backfill_notif_title">Синхронізація історії з Health Connect</string>
+    <string name="backfill_notif_progress">Оброблено %1$d/%2$d тренувань (%3$d збігів)</string>
+    <string name="backfill_notif_done_title">Синхронізацію історії завершено</string>
+    <string name="backfill_notif_done_body">Знайдено дані годинника для %1$d з %2$d тренувань</string>
+
+    <!-- Health Connect Rationale & Status -->
+    <string name="hc_rationale_title">Як GymTracker працює з Health Connect</string>
+    <string name="hc_rationale_body">GymTracker лише ЧИТАЄ пульс, калорії, кроки, сон, кисень у крові (SpO₂) та сесії тренувань, записані твоїм OnePlus Watch 3 через OHealth.\n\nДодаток ніколи не записує дублікати назад у Health Connect. Усі дані зберігаються локально на телефоні (з можливістю власних резервних копій).</string>
+    <string name="hc_status_matched">Годинник підключено</string>
+    <string name="hc_status_pending">Очікування синхронізації</string>
+    <string name="hc_status_hr_only">Лише фоновий пульс</string>
+    <string name="hc_status_no_data">Немає даних</string>
+    <string name="hc_status_not_attempted">Не синхронізовано</string>
+    <string name="hc_status_error">Помилка</string>
+
+    <!-- Today Screen -->
+    <string name="today_ohealth_card">Сьогодні на годиннику (OHealth)</string>
+    <string name="today_steps">Кроки</string>
+    <string name="today_active_kcal">Активні ккал</string>
+    <string name="today_sleep">Сон</string>
+    <string name="today_spo2">SpO₂</string>
+    <string name="today_rhr">Пульс спокою</string>
+    <string name="today_start_workout">Почати тренування</string>
+    <string name="today_resume_workout">Продовжити тренування</string>
+    <string name="today_empty_workout">Вільне тренування</string>
+    <string name="today_preworkout_toggle">Прийняв передтрен ⚡</string>
+    <string name="today_last_workout">Останнє тренування</string>
+    <string name="today_no_workouts">Ще немає тренувань. Імпортуй історію з Jefit або почни нове!</string>
+    <string name="today_import_cta">Імпортувати історію Jefit</string>
+    <string name="today_hc_permission_banner">Надай доступ до Health Connect, щоб підтягувати пульс і калорії з годинника</string>
+    <string name="today_grant_hc">Надати доступ</string>
+    <string name="today_pending_sync_banner">%1$d тренувань очікують на дані годинника</string>
+    <string name="today_sync_now">Оновити зараз</string>
+
+    <!-- Gym Screen -->
+    <string name="gym_subtab_history">Історія</string>
+    <string name="gym_subtab_routines">Програми</string>
+    <string name="gym_subtab_exercises">Вправи та PR</string>
+    <string name="gym_include_external">Кардіо HC</string>
+    <string name="gym_filter_all">Усі</string>
+    <string name="gym_break_badge">Перерва: %1$s (%2$d дн.)</string>
+    <string name="gym_watch_reminder">Запустіть «Силове тренування» на годиннику</string>
+    <string name="gym_big3_title">Сума Великої Трійки (e1RM)</string>
+    <string name="gym_search_exercises">Пошук вправи (EN / UK)…</string>
+    <string name="gym_no_routines">Програм ще немає. Імпортуй CSV з Jefit у Налаштуваннях.</string>
+    <string name="gym_external_tag">Зовнішнє (HC)</string>
+    <string name="gym_sync_pending_btn">Оновити очікуючі</string>
+
+    <!-- Active Workout Screen -->
+    <string name="workout_elapsed_label">Тривалість</string>
+    <string name="workout_volume_label">Тоннаж</string>
+    <string name="workout_rest_label">Відпочинок: %1$s</string>
+    <string name="workout_add_exercise">Додати вправу</string>
+    <string name="workout_add_set">+ Підхід</string>
+    <string name="workout_plates">Бліни</string>
+    <string name="workout_1rm_table">1RM %</string>
+    <string name="workout_finish_confirm_title">Завершити тренування?</string>
+    <string name="workout_finish_confirm_body">Незавершені підходи буде видалено, а синхронізацію з годинником заплановано автоматично.</string>
+    <string name="workout_discard">Скасувати тренування</string>
+    <string name="workout_discard_confirm">Видалити це активне тренування? Усі підходи цієї сесії буде втрачено.</string>
+    <string name="workout_note_hint">Нотатка до вправи…</string>
+    <string name="workout_rpe_easy">Легко (+3)</string>
+    <string name="workout_rpe_mod">Норм (+1–2)</string>
+    <string name="workout_rpe_fail">Відмова (0)</string>
+    <string name="workout_live_pr_banner">🏆 Новий PR! %1$s</string>
+    <string name="workout_weight_hint">кг</string>
+    <string name="workout_reps_hint">повт.</string>
+    <string name="set_type_work">Робочий</string>
+    <string name="set_type_warmup">Розминка</string>
+    <string name="set_type_drop">Дроп-сет</string>
+    <string name="set_type_failure">До відмови</string>
+    <string name="plate_calc_title">Калькулятор блінів (гриф 20 кг)</string>
+    <string name="plate_per_side">На кожну сторону:</string>
+    <string name="plate_bar_only">Порожній гриф (20 кг)</string>
+    <string name="plate_achievable">Набрано: %1$s кг</string>
+    <string name="keep_screen_awake">Не вимикати екран</string>
+
+    <!-- Summary Screen -->
+    <string name="summary_title">Підсумок тренування</string>
+    <string name="summary_smart_calories_title">Smart-калорії (Гібридні)</string>
+    <string name="summary_smart_breakdown">Годинник: %1$d ккал + Силова (%2$s т): +%3$d ккал + EPOC: +%4$d ккал</string>
+    <string name="summary_smart_estimated_breakdown">Силова робота: +%1$d ккал + EPOC: +%2$d ккал (Без даних годинника)</string>
+    <string name="summary_hr_title">Пульс та зони</string>
+    <string name="summary_avg_hr">Середній</string>
+    <string name="summary_max_hr">Макс.</string>
+    <string name="summary_trimp">TRIMP</string>
+    <string name="summary_rematch">Прив\'язати</string>
+    <string name="summary_unlink">Відв\'язати</string>
+    <string name="summary_pick_session_title">Обери сесію з OHealth</string>
+    <string name="summary_no_candidate_sessions">Не знайдено сесій годинника в межах ±3 годин.</string>
+    <string name="summary_per_set_hr">Пік пульсу: %1$s • Відп: %2$s • Відн.60с: %3$s</string>
+    <string name="summary_delete_workout">Видалити тренування</string>
+    <string name="summary_delete_confirm">Видалити це тренування назавжди?</string>
+    <string name="summary_preworkout_badge">⚡ Передтрен</string>
+
+    <!-- Exercise Detail / PR & 1RM -->
+    <string name="ex_detail_formula">Формула 1RM</string>
+    <string name="ex_detail_max_reps_10">Лише ≤10 повт.</string>
+    <string name="ex_detail_compact_breaks">Стиснути перерви</string>
+    <string name="ex_detail_calendar_axis">Календарна вісь</string>
+    <string name="ex_detail_chart_title">Графік прогресу сили (e1RM та Макс. вага)</string>
+    <string name="ex_detail_volume_title">Тоннаж за сесію (кг)</string>
+    <string name="ex_detail_rel_title">Відносна сила (e1RM / Вага тіла)</string>
+    <string name="ex_detail_prs_title">Особисті рекорди (PR)</string>
+    <string name="ex_detail_era_title">Порівняння періодів (Камбек)</string>
+    <string name="ex_detail_era_2019">Пік 2019–2021</string>
+    <string name="ex_detail_era_2023">Пік 2023</string>
+    <string name="ex_detail_era_2026">Зараз (2026)</string>
+    <string name="ex_detail_era_recovery">%1$d%% від кращого піку</string>
+    <string name="ex_detail_rep_max_title">Таблиця робочих ваг (% від 1RM)</string>
+    <string name="ex_detail_history_title">Історія підходів</string>
+    <string name="ex_detail_legend_e1rm">Розрах. 1RM</string>
+    <string name="ex_detail_legend_max_w">Макс. вага</string>
+    <string name="ex_detail_legend_break">Перерва (&gt;60д)</string>
+    <string name="pr_best_e1rm">Кращий e1RM</string>
+    <string name="pr_max_weight">Макс. вага</string>
+    <string name="pr_max_reps_weight">Рекорд повторень</string>
+    <string name="pr_max_set_vol">Тоннаж підходу</string>
+    <string name="pr_max_session_vol">Тоннаж за сесію</string>
+
+    <!-- Stack / Health / Insights -->
+    <string name="stack_phase2_title">Трекер спортпіту та кофеїну</string>
+    <string name="stack_phase2_desc">Наступний етап (Milestone 3): Креатин, Протеїн, Передтрен, Омега-3, Вітамін D3 з нагадуваннями та кривою виведення кофеїну перед сном.</string>
+    <string name="health_bw_title">Щоденник ваги тіла</string>
+    <string name="health_bw_add">Записати вагу</string>
+    <string name="health_bw_outlier">Викид</string>
+    <string name="health_medical_preview_title">Медичний хаб і аналізи (Milestone 4)</string>
+    <string name="health_medical_preview_desc">Аналізи крові (клінічна vs атлетична норма), імпорт PDF/фото через Gemini Vision, скріни OHealth (HRV/температура/судини) та 2D-карта болю.</string>
+    <string name="insights_muscle_title">Тижневий об\'єм по м\'язах (підходи, 7 дн.)</string>
+    <string name="insights_coach_preview_title">Gemini AI-тренер та Тижневі/Місячні звіти (Milestone 3)</string>
+    <string name="insights_coach_preview_desc">Поради щодо ваги перед залом, аналіз відновлення після тренування та недільні/місячні зведені звіти.</string>
+
+    <!-- Settings & Jefit Import -->
+    <string name="settings_language">Мова додатку</string>
+    <string name="lang_system">Системна</string>
+    <string name="lang_en">English</string>
+    <string name="lang_uk">Українська</string>
+    <string name="settings_physiology">Фізіологія та таймери</string>
+    <string name="settings_hrmax">Макс. пульс (уд/хв)</string>
+    <string name="settings_sec_per_rep">Сек / повт.</string>
+    <string name="settings_default_rest">Відпочинок за замовчуванням (с)</string>
+    <string name="settings_hc_section">Health Connect і годинник</string>
+    <string name="settings_hc_core">Базовий доступ (Читання)</string>
+    <string name="settings_hc_history">Історія (&gt;30 днів)</string>
+    <string name="settings_hc_bg">Фонове читання</string>
+    <string name="settings_granted">Надано</string>
+    <string name="settings_not_granted">Не надано</string>
+    <string name="settings_unsupported">Недоступно в ОС</string>
+    <string name="settings_discover_sources">Сканувати</string>
+    <string name="settings_watch_source_label">Обраний додаток годинника: %1$s</string>
+    <string name="settings_data_section">Міграція та резервні копії</string>
+    <string name="settings_import_jefit">Імпорт із Jefit CSV</string>
+    <string name="settings_export_json">Експорт JSON-бекапу</string>
+    <string name="settings_import_json">Відновити JSON-бекап</string>
+    <string name="settings_cloud_note">Хмарна БД (Supabase): файл supabase/schema.sql готовий для підключення хмарної синхронізації.</string>
+
+    <string name="import_title">Імпорт Jefit CSV</string>
+    <string name="import_pick_file">Обрати файл Jefit CSV</string>
+    <string name="import_preview_title">Попередній звіт</string>
+    <string name="import_commit_btn">Імпортувати в базу</string>
+    <string name="import_success_title">Імпорт завершено!</string>
+    <string name="import_backfill_cta">Підтягнути пульс і калорії з годинника (2026)</string>
+    <string name="import_stat_sessions">Сесії: %1$d прочитано • %2$d імпортовано • %3$d порожніх пропущено</string>
+    <string name="import_stat_logs">Записів вправ: %1$d • Логів підходів: %2$d</string>
+    <string name="import_stat_timestamped">Силових тренувань із часом підходів: %1$d (%2$d підходів)</string>
+    <string name="import_stat_external">Зовнішніх дублікатів кардіо (HC): %1$d</string>
+    <string name="import_stat_eids">Розпізнано ID вправ: %1$d • Програм: %2$d (%3$d днів)</string>
+    <string name="import_stat_bw">Записів ваги тіла: %1$d (викидів: %2$d)</string>
+    <string name="import_stat_disagreements">Розбіжностей кількості підходів: %1$d</string>
+
+    <!-- Muscles -->
+    <string name="muscle_chest">Груди</string>
+    <string name="muscle_back">Спина</string>
+    <string name="muscle_lats">Найширші</string>
+    <string name="muscle_traps">Трапеції</string>
+    <string name="muscle_lower_back">Поперек</string>
+    <string name="muscle_front_delts">Передня дельта</string>
+    <string name="muscle_side_delts">Середня дельта</string>
+    <string name="muscle_rear_delts">Задня дельта</string>
+    <string name="muscle_biceps">Біцепс</string>
+    <string name="muscle_triceps">Тріцепс</string>
+    <string name="muscle_forearms">Передпліччя</string>
+    <string name="muscle_abs">Прес</string>
+    <string name="muscle_hip_flexors">Згиначі стегна</string>
+    <string name="muscle_quads">Квадрицепс</string>
+    <string name="muscle_hamstrings">Біцепс стегна</string>
+    <string name="muscle_glutes">Сідниці</string>
+    <string name="muscle_calves">Литки</string>
+    <string name="muscle_cardio">Кардіо</string>
+
+    <!-- v1.1 BodyMap & Muscle Categories -->
+    <string name="bodymap_title">BodyMap — Навантаження м\'язів</string>
+    <string name="cat_triceps">Тріцепс</string>
+    <string name="cat_chest">Груди</string>
+    <string name="cat_shoulders">Плечі</string>
+    <string name="cat_biceps">Біцепс</string>
+    <string name="cat_abs">Прес</string>
+    <string name="cat_back">Спина</string>
+    <string name="cat_forearms">Передпліччя</string>
+    <string name="cat_upper_leg">Стегна</string>
+    <string name="cat_glutes">Сідниці</string>
+    <string name="cat_cardio">Кардіо</string>
+    <string name="cat_lower_leg">Литки</string>
+    <string name="cat_all">Усі</string>
+
+    <!-- v1.1 Gym Tabs, Routines, Muscle Grid, Calendar -->
+    <string name="gym_tab_routines">Програми</string>
+    <string name="gym_tab_exercises">Вправи</string>
+    <string name="gym_tab_progress">Прогрес</string>
+    <string name="routines_overview">Огляд</string>
+    <string name="routines_day_details">Деталі дня</string>
+    <string name="routines_est_time">~%1$s</string>
+    <string name="routines_days_ago">%1$d дн. тому</string>
+    <string name="routines_today">Сьогодні</string>
+    <string name="routines_yesterday">Вчора</string>
+    <string name="routines_never">Ще не було</string>
+    <string name="routines_any_day">БУДЬ-ЯКИЙ</string>
+    <string name="exercises_grid_mode">М\'язи</string>
+    <string name="exercises_list_mode">Список</string>
+    <string name="exercises_found_count">Знайдено: %1$d</string>
+    <string name="progress_volume_week">Тоннаж</string>
+    <string name="progress_time_week">Час залу</string>
+    <string name="progress_this_week">Цей тиждень</string>
+    <string name="progress_total_sessions">Усього сесій</string>
+    <string name="progress_current_streak">Поточна серія</string>
+    <string name="progress_streak_weeks">%1$d тиж.</string>
+    <string name="progress_history_list">Журнал тренувань</string>
+
+    <!-- v1.1 Active Workout 1-Exercise Pager -->
+    <string name="active_all_exercises">Усі вправи</string>
+    <string name="active_rest_timer">Таймер</string>
+    <string name="active_skip_rest">Пропустити відпочинок</string>
+    <string name="active_next_exercise">Наступна вправа →</string>
+    <string name="active_rest_banner_label">Відпочинок</string>
+    <string name="active_edit_set">Підхід #%1$d</string>
+    <string name="active_col_set">№</string>
+    <string name="active_col_kg">Кг</string>
+    <string name="active_col_reps">Повт.</string>
+    <string name="active_col_dur">Час</string>
+    <string name="active_remove_last_set">Видалити</string>
+    <string name="active_cardio_duration">Хв</string>
+    <string name="active_cardio_calories">Ккал</string>
+    <string name="active_cardio_distance">Км</string>
+
+    <!-- v1.1 Summary -->
+    <string name="summary_started_at">Почато о %1$s</string>
+    <string name="summary_records_label">Рекорди</string>
+    <string name="summary_sets_reps_label">Підх. × Повт.</string>
+    <string name="summary_kcal_hr_label">Ккал та Пульс</string>
+    <string name="summary_exercises_header">%1$d вправ</string>
+    <string name="summary_tap_bodymap">Натисни на силует для деталей по м\'язах</string>
+    <string name="summary_best_1rm">1RM</string>
+
+    <!-- v1.1 Localized short units & routine labels -->
+    <string name="unit_cm">см</string>
+    <string name="unit_ex_short">впр.</string>
+    <string name="routines_exercises_count">%1$d вправ</string>
+    <string name="routines_sets_count">%1$d підх.</string>
+
+    <!-- v1.1 Health Body Stats -->
+    <string name="health_tab_body_stats">Заміри тіла</string>
+    <string name="health_tab_weight_chart">Графік ваги</string>
+    <string name="stat_weight">Вага</string>
+    <string name="stat_body_fat">Жир %</string>
+    <string name="stat_waist">Талія</string>
+    <string name="stat_chest">Груди</string>
+    <string name="stat_arms">Біцепс</string>
+    <string name="stat_forearms">Передпліччя</string>
+    <string name="stat_shoulders">Плечі</string>
+    <string name="stat_hips">Стегна</string>
+    <string name="stat_upper_leg">Стегно (нога)</string>
+    <string name="stat_lower_leg">Литка</string>
+    <string name="stat_neck">Шия</string>
+    <string name="stat_height">Зріст</string>
+    <string name="health_stats_saved">Заміри збережено</string>
+
+    <!-- v1.1 Settings Theme -->
+    <string name="settings_appearance">Вигляд і мова</string>
+    <string name="settings_theme">Тема</string>
+    <string name="theme_dark">Темна</string>
+    <string name="theme_light">Світла</string>
+    <string name="theme_system">Системна</string>
+    <string name="settings_connected">Підключено</string>
+
+    <!-- v1.2 Muscle Recovery & Stimulus -->
+    <string name="recovery_title">Відновлення м\'язів</string>
+    <string name="recovery_subtitle">Готовність на основі стимулу тренувань і часу відновлення</string>
+    <string name="recovery_overall_label">Загальна готовність</string>
+    <string name="recovery_col_muscle">М\'яз</string>
+    <string name="recovery_col_rate">Відновлення</string>
+    <string name="recovery_col_time">Залишилось</string>
+    <string name="recovery_ready_now">0 хв</string>
+    <string name="recovery_all_fresh">Усі групи м\'язів відновлені на 100%</string>
+    <string name="recovery_injured_title">Травмовані / болючі м\'язи</string>
+    <string name="recovery_marked_date">Позначено: %1$s</string>
+    <string name="recovery_mark_injury">Познач чекбоксом зону болю або травми</string>
+    <string name="recovery_legend_fresh">100% готовий</string>
+    <string name="recovery_legend_recovering">Відновлюється</string>
+    <string name="recovery_legend_fatigued">Втомлений</string>
+    <string name="recovery_legend_injured">Травма</string>
+    <string name="recovery_sleep_low">Короткий сон (%1$s) — відновлення сповільнене</string>
+    <string name="recovery_sleep_good">Гарний сон (%1$s) — відновлення прискорене</string>
+    <string name="recovery_card_cta">Деталі</string>
+    <string name="recovery_day_badge">%1$d%%</string>
+
+    <string name="stimulus_of_norm">%1$d%% від норми</string>
+    <string name="stimulus_focus_share">Фокус %1$d%%</string>
+    <string name="stimulus_level_light">Легко</string>
+    <string name="stimulus_level_moderate">Помірно</string>
+    <string name="stimulus_level_optimal">Оптим.</string>
+    <string name="stimulus_level_max">Макс.</string>
+    <string name="summary_muscle_stimulus_title">Пропрацювання та фокус сесії</string>
+
+    <string name="rec_group_abs">Прес</string>
+    <string name="rec_group_back">Спина</string>
+    <string name="rec_group_biceps">Біцепс</string>
+    <string name="rec_group_chest">Груди</string>
+    <string name="rec_group_forearms">Передпліччя</string>
+    <string name="rec_group_glutes">Сідниці</string>
+    <string name="rec_group_shoulders">Плечі</string>
+    <string name="rec_group_triceps">Тріцепс</string>
+    <string name="rec_group_thighs">Стегна</string>
+    <string name="rec_group_calves">Литки</string>
+
+    <!-- v1.2 Exercise Detail 3-Tab & Goal -->
+    <string name="ex_tab_history">Історія</string>
+    <string name="ex_tab_chart">Графік</string>
+    <string name="ex_tab_guide">Інфо</string>
+    <string name="ex_goal_badge">Ціль: %1$s кг</string>
+    <string name="ex_set_goal">+ Ціль</string>
+    <string name="ex_goal_dialog_title">Ціль по 1RM (кг)</string>
+    <string name="ex_goal_clear">Очистити</string>
+    <string name="ex_goal_line_label">Ціль: %1$s кг</string>
+    <string name="ex_col_weight_reps">Вага × повт.</string>
+    <string name="ex_col_rest">Відп.</string>
+    <string name="ex_chart_1rm">1RM</string>
+    <string name="ex_chart_volume">Тоннаж</string>
+    <string name="ex_chart_min">Мін.</string>
+    <string name="ex_chart_max">Макс.</string>
+    <string name="ex_guide_target_muscles">Цільові м\'язи</string>
+    <string name="ex_guide_details">Профіль вправи</string>
+    <string name="ex_guide_type">Тип обліку</string>
+    <string name="ex_guide_tier">Категорія навантаження</string>
+    <string name="ex_guide_sessions">Сесій в історії</string>
+    <string name="ex_no_history">Поки що немає виконаних підходів для цієї вправи.</string>
+    <string name="ex_range_14d">14Д</string>
+    <string name="ex_range_1m">1М</string>
+    <string name="ex_range_3m">3М</string>
+    <string name="ex_range_6m">6М</string>
+    <string name="ex_range_1y">1Р</string>
+    <string name="ex_range_all">Усі</string>
+    <string name="ex_type_weighted">Вага × Повт.</string>
+    <string name="ex_type_bodyweight">Власна вага</string>
+    <string name="ex_type_cardio">Кардіо</string>
+    <string name="ex_tier_lower">База ноги</string>
+    <string name="ex_tier_upper">База верх</string>
+    <string name="ex_tier_isolation">Ізоляція</string>
+    <string name="ex_tier_cardio">Кардіо</string>
+
+    <!-- Xiaomi Smart Scale (v1.3.0) -->
+    <string name="scale_title">Розумні ваги Xiaomi</string>
+    <string name="scale_subtitle_bound">%1$s (%2$s)</string>
+    <string name="scale_subtitle_unbound">Mi Body Composition Scale 2 / Mi Scale</string>
+    <string name="scale_card_title">Розумні ваги Xiaomi (BLE)</string>
+    <string name="scale_action_weigh_in">Зважитись</string>
+    <string name="scale_action_setup">Підключити ваги</string>
+    <string name="scale_settings_card_desc">Прямий перехоплювач BLE без Zepp Life, фонове авто-збереження та фільтр сім\'ї</string>
+    <string name="scale_perm_required_title">Потрібен доступ до Bluetooth</string>
+    <string name="scale_perm_required_desc">Надайте дозвіл «Пристрої поруч» (Bluetooth), щоб додаток напряму зчитував трансляцію з ваг.</string>
+    <string name="scale_grant_ble_perm">Надати Bluetooth</string>
+    <string name="scale_bt_off_title">Bluetooth вимкнено</string>
+    <string name="scale_bt_off_desc">Увімкніть Bluetooth, щоб ловити дані ваги та біоімпедансу з ваг Xiaomi.</string>
+    <string name="scale_enable_bt">Увімкнути Bluetooth</string>
+    <string name="scale_stage_idle">Готовий до сканування</string>
+    <string name="scale_stage_scanning">Станьте на ваги босоніж…</string>
+    <string name="scale_stage_weighing">Зважування…</string>
+    <string name="scale_stage_measuring_imp">Вагу зафіксовано — стійте босоніж для біоімпедансу…</string>
+    <string name="scale_stage_saved">Збережено в журнал здоров\'я!</string>
+    <string name="scale_stage_out_of_range">Поза твоїм діапазоном (%1$.0f–%2$.0f кг) — можливо, інший член сім\'ї.</string>
+    <string name="scale_action_start_scan">Сканувати</string>
+    <string name="scale_action_stop_scan">Зупинити</string>
+    <string name="scale_action_save_anyway">Зберегти все одно</string>
+    <string name="scale_action_bind">Прив\'язати</string>
+    <string name="scale_action_unbind">Відв\'язати</string>
+    <string name="scale_device_section">Прив\'язані ваги</string>
+    <string name="scale_bound_active">Активні: %1$s (%2$s)</string>
+    <string name="scale_not_bound">Ваги ще не прив\'язані — станьте на ваги під час сканування для авто-прив\'язки.</string>
+    <string name="scale_discovered_scales">Знайдені ваги Xiaomi</string>
+    <string name="scale_bg_toggle_title">Фонове авто-перехоплення</string>
+    <string name="scale_bg_toggle_desc">Автоматично зберігає ваші зважування у журнал здоров\'я навіть при закритому додатку.</string>
+    <string name="scale_bg_on_label">Фон: УВІМК.</string>
+    <string name="scale_bg_off_label">Тільки вручну</string>
+    <string name="scale_range_title">Фільтр ваги (захист від сім\'ї)</string>
+    <string name="scale_range_desc">Фон зберігає тільки ваш діапазон (за замовчуванням ±12 кг), ігноруючи вагу інших членів сім\'ї.</string>
+    <string name="scale_range_min">Мін. (кг)</string>
+    <string name="scale_range_max">Макс. (кг)</string>
+    <string name="scale_range_apply">Застосувати</string>
+    <string name="scale_range_reset">Авто (±12 кг)</string>
+    <string name="scale_range_pill">Діапазон: %1$.0f–%2$.0f кг</string>
+    <string name="scale_profile_section">Профіль для розрахунку складу тіла</string>
+    <string name="scale_profile_height">Зріст (см)</string>
+    <string name="scale_profile_birth_year">Рік народж.</string>
+    <string name="scale_gender_male">Чоловіча</string>
+    <string name="scale_gender_female">Жіноча</string>
+    <string name="scale_profile_hint">Зріст, вік і стать потрібні для обчислення % жиру, м\'язів, води, кісткової маси та метаболічного віку.</string>
+    <string name="scale_comp_dashboard_title">Склад тіла</string>
+    <string name="scale_comp_impedance_caption">Оновлено %1$s • Біоімпеданс %2$d Ω</string>
+    <string name="scale_comp_no_imp_caption">Оновлено %1$s • Тільки вага</string>
+    <string name="scale_metric_bmi">ІМТ</string>
+    <string name="scale_metric_fat">Жир %</string>
+    <string name="scale_metric_muscle">М\'язова маса</string>
+    <string name="scale_metric_lbm">Суха маса</string>
+    <string name="scale_metric_water">Вода %</string>
+    <string name="scale_metric_protein">Білок %</string>
+    <string name="scale_metric_visceral">Вісцеральний жир</string>
+    <string name="scale_metric_bone">Кісткова маса</string>
+    <string name="scale_metric_bmr">Базовий обмін</string>
+    <string name="scale_metric_metabolic_age">Метабол. вік</string>
+    <string name="scale_metric_body_type">Тип тіла</string>
+    <string name="scale_metric_ideal_weight">Ідеальна вага</string>
+    <string name="scale_unit_kcal">ккал</string>
+    <string name="scale_unit_years">р.</string>
+    <string name="scale_unit_ohm">Ω</string>
+    <string name="scale_status_low">Низький</string>
+    <string name="scale_status_normal">Норма</string>
+    <string name="scale_status_optimal">Оптим.</string>
+    <string name="scale_status_high">Високий</string>
+    <string name="scale_body_type_obese">Ожиріння</string>
+    <string name="scale_body_type_overweight">Надвага</string>
+    <string name="scale_body_type_thick_set">Кремезний</string>
+    <string name="scale_body_type_lack_exercise">Брак активності</string>
+    <string name="scale_body_type_balanced">Збалансований</string>
+    <string name="scale_body_type_balanced_muscular">Мускулистий</string>
+    <string name="scale_body_type_skinny">Худорлявий</string>
+    <string name="scale_body_type_balanced_skinny">Стрункий підтягн.</string>
+    <string name="scale_body_type_skinny_muscular">Сухий атлет</string>
+    <string name="scale_log_comp_line">Жир %1$.1f%% • М\'язи %2$.1f кг • Вода %3$.1f%%</string>
+    <string name="scale_log_fat_only">Жир %1$.1f%%</string>
+    <string name="scale_notif_channel_name">Авто-збереження ваг Xiaomi</string>
+    <string name="scale_notif_channel_desc">Сповіщення про автоматичне збереження зважувань із розумних ваг Xiaomi</string>
+    <string name="scale_notif_title">Записано: %1$.1f кг • %2$.1f%% жиру</string>
+    <string name="scale_notif_title_weight_only">Записано вагу: %1$.1f кг</string>
+    <string name="scale_notif_text_full">М\'язи %1$.1f кг • Вода %2$.1f%% • Вісц. жир %3$d</string>
+    <string name="scale_notif_text_pending_imp">Очікуємо біоімпеданс…</string>
+    <string name="scale_notif_text_no_imp">ІМТ %1$.1f • Базовий обмін %2$d ккал</string>
+
+    <!-- Cloud Sync (Supabase) -->
+    <string name="cloud_section_title">Хмарна БД (Supabase)</string>
+    <string name="cloud_status_connected">Вхід виконано: %1$s</string>
+    <string name="cloud_status_disconnected">Не ввійшли — дані лише локально на телефоні</string>
+    <string name="cloud_last_sync">Остання синхронізація: %1$s</string>
+    <string name="cloud_last_sync_never">Ще не синхронізувалося</string>
+    <string name="cloud_url_label">Supabase URL</string>
+    <string name="cloud_key_label">Publishable Key (sb_publishable_…)</string>
+    <string name="cloud_save_config">Зберегти ключі сервера</string>
+    <string name="cloud_email_label">Email</string>
+    <string name="cloud_password_label">Пароль</string>
+    <string name="cloud_sign_in">Увійти</string>
+    <string name="cloud_sign_up">Створити акаунт</string>
+    <string name="cloud_sign_out">Вийти</string>
+    <string name="cloud_auto_sync">Авто-бекап у хмару (щодня)</string>
+    <string name="cloud_auto_sync_desc">Підтримує Free Tier Supabase активним раз на 24 год і бекапить усі тренування та вагу.</string>
+    <string name="cloud_sync_now">Синхронізувати все в хмару</string>
+    <string name="cloud_restore_now">Відновити з хмари</string>
+    <string name="cloud_syncing">Синхронізація із Supabase…</string>
+</resources>

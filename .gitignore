@@ -1,0 +1,27 @@
+# Personal data, local notes & screenshots (NEVER commit)
+dikiyr_*.csv
+*.csv
+Screenshots/
+ANALYSIS.md
+BUILD_SPEC.md
+
+# Gradle & Android Studio
+local.properties
+.gradle/
+.gradle_home/
+.kotlin/
+build/
+app/build/
+*/build/
+*.apk
+*.aab
+.idea/
+*.iml
+*.hprof
+.cxx/
+captures/
+
+# Keystores & secrets
+*.jks
+*.keystore
+secrets.properties

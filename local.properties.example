@@ -1,0 +1,3 @@
+sdk.dir=B\:\\android-sdk
+supabase.url=https://your-project-ref.supabase.co
+supabase.publishableKey=sb_publishable_your_key_here
