@@ -41,7 +41,9 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Medication
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -95,11 +97,13 @@ import com.gymtracker.app.data.db.SupplementItemEntity
 import com.gymtracker.app.data.db.SupplementScheduleEntity
 import com.gymtracker.app.data.db.SupplementTrigger
 import com.gymtracker.app.data.db.SupplementUnit
+import com.gymtracker.app.data.db.SupplementWithSchedules
 import com.gymtracker.app.domain.CaffeineSleepStatus
 import com.gymtracker.app.domain.CyclePhase
 import com.gymtracker.app.domain.InteractionKind
 import com.gymtracker.app.domain.StackTimeSlot
 import com.gymtracker.app.domain.SupplementInteractionEngine
+import com.gymtracker.app.domain.SupplementReferenceEntry
 import com.gymtracker.app.ui.common.formatInstantShort
 import com.gymtracker.app.ui.common.isUkrainianLocale
 import com.gymtracker.app.ui.components.CaffeineDecayChart
@@ -129,7 +133,9 @@ fun StackScreen(
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var editingItem by remember { mutableStateOf<StackChecklistItemUi?>(null) }
+    var prefillEntry by remember { mutableStateOf<SupplementReferenceEntry?>(null) }
     var showAddSheet by remember { mutableStateOf(false) }
+    var showCompatGuide by remember { mutableStateOf(false) }
     var restockTarget by remember { mutableStateOf<StackChecklistItemUi?>(null) }
     var showBedtimeDialog by remember { mutableStateOf(false) }
     var compatExpanded by remember { mutableStateOf(true) }
@@ -170,6 +176,7 @@ fun StackScreen(
                 FloatingActionButton(
                     onClick = {
                         editingItem = null
+                        prefillEntry = null
                         showAddSheet = true
                     },
                     containerColor = ElectricBlue
@@ -206,9 +213,11 @@ fun StackScreen(
                     isUk = isUk,
                     compatExpanded = compatExpanded,
                     onToggleCompat = { compatExpanded = !compatExpanded },
+                    onOpenCompatGuide = { showCompatGuide = true },
                     onSeedStarterStack = { viewModel.seedDefaultStack() },
                     onOpenAddManual = {
                         editingItem = null
+                        prefillEntry = null
                         showAddSheet = true
                     },
                     onToggleItem = { viewModel.toggleTakenToday(it) },
@@ -234,8 +243,10 @@ fun StackScreen(
                         viewModel.setRemindersEnabled(enabled)
                     },
                     onOpenBedtimePicker = { showBedtimeDialog = true },
+                    onOpenCompatGuide = { showCompatGuide = true },
                     onEditItem = {
                         editingItem = it
+                        prefillEntry = null
                         showAddSheet = true
                     },
                     onRestockItem = { restockTarget = it },
@@ -245,24 +256,43 @@ fun StackScreen(
         }
     }
 
+    if (showCompatGuide) {
+        CompatibilityReferenceSheet(
+            isUk = isUk,
+            onDismiss = { showCompatGuide = false },
+            onAddPreset = { entry ->
+                showCompatGuide = false
+                editingItem = null
+                prefillEntry = entry
+                showAddSheet = true
+            }
+        )
+    }
+
     if (showAddSheet) {
         AddEditSupplementSheet(
             initial = editingItem,
+            prefill = prefillEntry,
+            existingStack = state.inventoryItems.map { it.withSchedules },
+            bedtimeMinutesOfDay = state.bedtimeMinutesOfDay,
             isUk = isUk,
             onDismiss = {
                 showAddSheet = false
                 editingItem = null
+                prefillEntry = null
             },
             onSave = { item, schedule ->
                 viewModel.saveSupplement(item, schedule)
                 showAddSheet = false
                 editingItem = null
+                prefillEntry = null
             },
             onDelete = editingItem?.let { target ->
                 {
                     viewModel.deleteSupplement(target.withSchedules.item.id)
                     showAddSheet = false
                     editingItem = null
+                    prefillEntry = null
                 }
             }
         )
@@ -372,6 +402,7 @@ private fun StackTodayTab(
     isUk: Boolean,
     compatExpanded: Boolean,
     onToggleCompat: () -> Unit,
+    onOpenCompatGuide: () -> Unit,
     onSeedStarterStack: () -> Unit,
     onOpenAddManual: () -> Unit,
     onToggleItem: (StackChecklistItemUi) -> Unit,
@@ -698,7 +729,37 @@ private fun StackTodayTab(
                                     )
                                 }
                             }
+                            OutlinedButton(
+                                onClick = onOpenCompatGuide,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.stack_compat_guide_btn))
+                            }
                         }
+                    }
+                }
+            }
+        } else {
+            item {
+                ObsidianCard(
+                    onClick = onOpenCompatGuide,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.MenuBook, contentDescription = null, tint = ElectricBlue)
+                        Text(
+                            text = stringResource(R.string.stack_compat_guide_btn),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
@@ -844,6 +905,7 @@ private fun StackInventoryTab(
     isUk: Boolean,
     onToggleReminders: (Boolean) -> Unit,
     onOpenBedtimePicker: () -> Unit,
+    onOpenCompatGuide: () -> Unit,
     onEditItem: (StackChecklistItemUi) -> Unit,
     onRestockItem: (StackChecklistItemUi) -> Unit,
     onDeleteLog: (Long) -> Unit
@@ -901,6 +963,23 @@ private fun StackInventoryTab(
                     ) {
                         Text(stringResource(R.string.stack_bedtime_label), style = MaterialTheme.typography.bodyMedium)
                         Text(bedLabel, style = MaterialTheme.typography.titleSmall, color = ElectricBlue, fontWeight = FontWeight.Bold)
+                    }
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenCompatGuide)
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.MenuBook, contentDescription = null, tint = ElectricBlue, modifier = Modifier.size(18.dp))
+                        Text(
+                            text = stringResource(R.string.stack_compat_guide_btn),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = ElectricBlue,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
@@ -970,6 +1049,22 @@ private fun StackInventoryTab(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    val synText = if (isUk) ui.recommendation.synergiesUk else ui.recommendation.synergiesEn
+                    val avoidText = if (isUk) ui.recommendation.avoidUk else ui.recommendation.avoidEn
+                    if (synText.isNotBlank() && synText != "—") {
+                        Text(
+                            text = "${stringResource(R.string.stack_synergy_label)}: $synText",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EmeraldRest
+                        )
+                    }
+                    if (avoidText.isNotBlank()) {
+                        Text(
+                            text = "${stringResource(R.string.stack_avoid_label)}: $avoidText",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = GoldPr
+                        )
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1040,34 +1135,151 @@ private fun StackInventoryTab(
     }
 }
 
-private data class StackPresetSpec(
-    val nameEn: String,
-    val nameUk: String,
-    val category: SupplementCategory,
-    val dose: Double,
-    val unit: SupplementUnit,
-    val caffeineMg: Int,
-    val servings: Double,
-    val threshold: Double,
-    val trigger: SupplementTrigger,
-    val time: String
-)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun CompatibilityReferenceSheet(
+    isUk: Boolean,
+    onDismiss: () -> Unit,
+    onAddPreset: (SupplementReferenceEntry) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val catalog = remember { SupplementInteractionEngine.referenceCatalog() }
+    var query by remember { mutableStateOf("") }
+    var selectedCat by remember { mutableStateOf<SupplementCategory?>(null) }
 
-private val QUICK_PRESETS = listOf(
-    StackPresetSpec("Creatine Monohydrate", "Креатин моногідрат", SupplementCategory.CREATINE, 5.0, SupplementUnit.G, 0, 60.0, 10.0, SupplementTrigger.AFTER_WORKOUT, ""),
-    StackPresetSpec("Whey Protein", "Протеїн", SupplementCategory.PROTEIN, 1.0, SupplementUnit.SCOOP, 0, 30.0, 5.0, SupplementTrigger.AFTER_WORKOUT, ""),
-    StackPresetSpec("Vitamin D3", "Вітамін D3", SupplementCategory.VITAMIN, 4000.0, SupplementUnit.IU, 0, 60.0, 10.0, SupplementTrigger.WITH_MEAL, "09:00"),
-    StackPresetSpec("Omega-3", "Омега-3", SupplementCategory.OMEGA_3, 2.0, SupplementUnit.CAPSULE, 0, 60.0, 10.0, SupplementTrigger.WITH_MEAL, "09:00"),
-    StackPresetSpec("Zinc", "Цинк", SupplementCategory.MINERAL, 25.0, SupplementUnit.MG, 0, 60.0, 10.0, SupplementTrigger.FIXED_TIME, "14:00"),
-    StackPresetSpec("Magnesium", "Магній", SupplementCategory.MINERAL, 400.0, SupplementUnit.MG, 0, 60.0, 10.0, SupplementTrigger.BEDTIME, "23:15"),
-    StackPresetSpec("Pre-Workout (Stim-Free)", "Передтрен (без кофеїну)", SupplementCategory.PRE_WORKOUT, 1.0, SupplementUnit.SCOOP, 0, 30.0, 5.0, SupplementTrigger.BEFORE_WORKOUT, ""),
-    StackPresetSpec("Pre-Workout (200mg Caf)", "Передтрен (200 мг кофеїну)", SupplementCategory.PRE_WORKOUT, 1.0, SupplementUnit.SCOOP, 200, 30.0, 5.0, SupplementTrigger.BEFORE_WORKOUT, "")
-)
+    val filtered = remember(query, selectedCat, isUk) {
+        val q = query.trim().lowercase()
+        catalog.filter { entry ->
+            (selectedCat == null || entry.category == selectedCat) &&
+                (q.isEmpty() ||
+                    entry.nameUk.lowercase().contains(q) ||
+                    entry.nameEn.lowercase().contains(q) ||
+                    entry.recommendation.synergiesUk.lowercase().contains(q) ||
+                    entry.recommendation.avoidUk.lowercase().contains(q) ||
+                    entry.recommendation.synergiesEn.lowercase().contains(q) ||
+                    entry.recommendation.avoidEn.lowercase().contains(q))
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.stack_compat_guide_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text(stringResource(R.string.stack_compat_guide_search)) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                FilterChip(
+                    selected = selectedCat == null,
+                    onClick = { selectedCat = null },
+                    label = { Text(stringResource(R.string.watch_filter_all), maxLines = 1) }
+                )
+                listOf(
+                    SupplementCategory.CREATINE,
+                    SupplementCategory.PROTEIN,
+                    SupplementCategory.PRE_WORKOUT,
+                    SupplementCategory.VITAMIN,
+                    SupplementCategory.MINERAL,
+                    SupplementCategory.OMEGA_3,
+                    SupplementCategory.OTHER
+                ).forEach { cat ->
+                    FilterChip(
+                        selected = selectedCat == cat,
+                        onClick = { selectedCat = if (selectedCat == cat) null else cat },
+                        label = { Text(stringResource(categoryLabelRes(cat)), maxLines = 1) }
+                    )
+                }
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(440.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(filtered, key = { it.tag.name }) { entry ->
+                    val name = if (isUk) entry.nameUk else entry.nameEn
+                    val rec = entry.recommendation
+                    ObsidianCard(containerColor = CardElevated, modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text(
+                                        text = "$name • ${formatDose(entry.defaultDose)} ${unitLabel(entry.unit, isUk)}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (isUk) rec.timingUk else rec.timingEn,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = ElectricBlue
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { onAddPreset(entry) },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Text(stringResource(R.string.stack_add_to_stack_short), maxLines = 1)
+                                }
+                            }
+                            Text(
+                                text = if (isUk) rec.tipUk else rec.tipEn,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${stringResource(R.string.stack_synergy_label)}: ${if (isUk) rec.synergiesUk else rec.synergiesEn}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = EmeraldRest
+                            )
+                            Text(
+                                text = "${stringResource(R.string.stack_avoid_label)}: ${if (isUk) rec.avoidUk else rec.avoidEn}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = CoralEnergy
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun AddEditSupplementSheet(
     initial: StackChecklistItemUi?,
+    prefill: SupplementReferenceEntry?,
+    existingStack: List<SupplementWithSchedules>,
+    bedtimeMinutesOfDay: Int,
     isUk: Boolean,
     onDismiss: () -> Unit,
     onSave: (SupplementItemEntity, SupplementScheduleEntity?) -> Unit,
@@ -1076,23 +1288,42 @@ private fun AddEditSupplementSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val initItem = initial?.withSchedules?.item
     val initSched = initial?.withSchedules?.schedules?.firstOrNull { it.deletedAt == null }
+    val allPresets = remember { SupplementInteractionEngine.referenceCatalog() }
 
-    var nameText by remember { mutableStateOf(initItem?.let { if (isUk) it.nameUk else it.nameEn } ?: "") }
-    var category by remember { mutableStateOf(initItem?.category ?: SupplementCategory.OTHER) }
-    var doseText by remember { mutableStateOf(initItem?.defaultDose?.let { formatDose(it) } ?: "1") }
-    var unit by remember { mutableStateOf(initItem?.unit ?: SupplementUnit.CAPSULE) }
-    var caffeineText by remember { mutableStateOf((initItem?.caffeineMgPerServing ?: 0).toString()) }
-    var servingsText by remember { mutableStateOf(initItem?.servingsRemaining?.let { formatDose(it) } ?: "30") }
-    var lowThreshText by remember { mutableStateOf(initItem?.lowStockThreshold?.let { formatDose(it) } ?: "5") }
-    var trigger by remember { mutableStateOf(initSched?.triggerType ?: SupplementTrigger.WITH_MEAL) }
+    var nameText by remember {
+        mutableStateOf(
+            initItem?.let { if (isUk) it.nameUk else it.nameEn }
+                ?: prefill?.let { if (isUk) it.nameUk else it.nameEn }
+                ?: ""
+        )
+    }
+    var category by remember { mutableStateOf(initItem?.category ?: prefill?.category ?: SupplementCategory.OTHER) }
+    var doseText by remember {
+        mutableStateOf(
+            initItem?.defaultDose?.let { formatDose(it) }
+                ?: prefill?.defaultDose?.let { formatDose(it) }
+                ?: "1"
+        )
+    }
+    var unit by remember { mutableStateOf(initItem?.unit ?: prefill?.unit ?: SupplementUnit.CAPSULE) }
+    var caffeineText by remember {
+        mutableStateOf((initItem?.caffeineMgPerServing ?: prefill?.caffeineMg ?: 0).toString())
+    }
+    var servingsText by remember { mutableStateOf(initItem?.servingsRemaining?.let { formatDose(it) } ?: "60") }
+    var lowThreshText by remember { mutableStateOf(initItem?.lowStockThreshold?.let { formatDose(it) } ?: "10") }
+    var trigger by remember {
+        mutableStateOf(initSched?.triggerType ?: prefill?.defaultTrigger ?: SupplementTrigger.WITH_MEAL)
+    }
     var timeText by remember {
         mutableStateOf(
-            initSched?.timeOfDay?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: when (trigger) {
-                SupplementTrigger.WITH_MEAL -> "09:00"
-                SupplementTrigger.BEDTIME -> "23:15"
-                SupplementTrigger.FIXED_TIME -> "14:00"
-                else -> ""
-            }
+            initSched?.timeOfDay?.format(DateTimeFormatter.ofPattern("HH:mm"))
+                ?: prefill?.defaultTime
+                ?: when (trigger) {
+                    SupplementTrigger.WITH_MEAL -> "09:00"
+                    SupplementTrigger.BEDTIME -> "23:15"
+                    SupplementTrigger.FIXED_TIME -> "14:00"
+                    else -> ""
+                }
         )
     }
     var cycleOnText by remember { mutableStateOf(initItem?.cycleDaysOn?.toString() ?: "") }
@@ -1107,7 +1338,27 @@ private fun AddEditSupplementSheet(
         unit = unit,
         caffeineMgPerServing = caffeineText.toIntOrNull() ?: 0
     )
+    val previewParsedTime = timeText.trim().takeIf { it.isNotEmpty() }?.let { raw ->
+        runCatching { LocalTime.parse(raw, DateTimeFormatter.ofPattern("H:mm")) }.getOrNull()
+    }
+    val previewSchedule = SupplementScheduleEntity(
+        supplementId = previewItem.id,
+        triggerType = trigger,
+        timeOfDay = previewParsedTime,
+        enabled = true
+    )
     val previewRec = SupplementInteractionEngine.recommendationFor(previewItem)
+    val liveStackChecks = remember(
+        nameText, category, doseText, unit, caffeineText, trigger, timeText, existingStack, bedtimeMinutesOfDay
+    ) {
+        if (nameText.isBlank()) emptyList()
+        else SupplementInteractionEngine.previewForCandidate(
+            candidate = previewItem,
+            schedule = previewSchedule,
+            existingStack = existingStack,
+            bedtimeMinutesOfDay = bedtimeMinutesOfDay
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1133,18 +1384,18 @@ private fun AddEditSupplementSheet(
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    QUICK_PRESETS.forEach { p ->
+                    allPresets.forEach { p ->
                         AssistChip(
                             onClick = {
                                 nameText = if (isUk) p.nameUk else p.nameEn
                                 category = p.category
-                                doseText = formatDose(p.dose)
+                                doseText = formatDose(p.defaultDose)
                                 unit = p.unit
                                 caffeineText = p.caffeineMg.toString()
-                                servingsText = formatDose(p.servings)
-                                lowThreshText = formatDose(p.threshold)
-                                trigger = p.trigger
-                                timeText = p.time
+                                servingsText = "60"
+                                lowThreshText = "10"
+                                trigger = p.defaultTrigger
+                                timeText = p.defaultTime
                             },
                             label = { Text(if (isUk) p.nameUk else p.nameEn, maxLines = 1) }
                         )
@@ -1280,7 +1531,7 @@ private fun AddEditSupplementSheet(
             }
 
             ObsidianCard(containerColor = CardElevated, modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(
                         text = stringResource(R.string.stack_intake_guide_label),
                         style = MaterialTheme.typography.labelMedium,
@@ -1292,6 +1543,42 @@ private fun AddEditSupplementSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    val synText = if (isUk) previewRec.synergiesUk else previewRec.synergiesEn
+                    val avoidText = if (isUk) previewRec.avoidUk else previewRec.avoidEn
+                    if (synText.isNotBlank() && synText != "—") {
+                        Text(
+                            text = "${stringResource(R.string.stack_synergy_label)}: $synText",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EmeraldRest
+                        )
+                    }
+                    if (avoidText.isNotBlank()) {
+                        Text(
+                            text = "${stringResource(R.string.stack_avoid_label)}: $avoidText",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = CoralEnergy
+                        )
+                    }
+                    if (liveStackChecks.isNotEmpty()) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                        Text(
+                            text = stringResource(R.string.stack_live_compat_header),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        liveStackChecks.forEach { inter ->
+                            val col = when (inter.kind) {
+                                InteractionKind.SYNERGY -> EmeraldRest
+                                InteractionKind.CAUTION -> GoldPr
+                                InteractionKind.CONFLICT -> CoralEnergy
+                            }
+                            Text(
+                                text = if (isUk) "• ${inter.titleUk}" else "• ${inter.titleEn}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = col
+                            )
+                        }
+                    }
                 }
             }
 

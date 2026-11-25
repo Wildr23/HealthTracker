@@ -663,4 +663,11 @@
     <string name="supp_trig_before_gym">До залу</string>
     <string name="supp_trig_after_gym">Після залу</string>
     <string name="supp_trig_bedtime">Перед сном</string>
+    <string name="stack_compat_guide_btn">Довідник сумісності (30+)</string>
+    <string name="stack_compat_guide_title">Довідник сумісності добавок</string>
+    <string name="stack_compat_guide_search">Пошук (Цинк, D3, Залізо, Ашваганда…)</string>
+    <string name="stack_synergy_label">Синергія ✓</string>
+    <string name="stack_avoid_label">Не поєднувати ✕</string>
+    <string name="stack_add_to_stack_short">+ В стек</string>
+    <string name="stack_live_compat_header">Сумісність із твоїм стеком:</string>
 </resources>

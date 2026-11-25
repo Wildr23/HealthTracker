@@ -657,4 +657,11 @@
     <string name="supp_trig_before_gym">Pre-workout</string>
     <string name="supp_trig_after_gym">Post-workout</string>
     <string name="supp_trig_bedtime">Bedtime</string>
+    <string name="stack_compat_guide_btn">Compatibility Guide (30+)</string>
+    <string name="stack_compat_guide_title">Supplement Compatibility Guide</string>
+    <string name="stack_compat_guide_search">Search (Zinc, D3, Iron, Ashwagandha…)</string>
+    <string name="stack_synergy_label">Pairs well ✓</string>
+    <string name="stack_avoid_label">Avoid together ✕</string>
+    <string name="stack_add_to_stack_short">+ Stack</string>
+    <string name="stack_live_compat_header">Compatibility with your current stack:</string>
 </resources>

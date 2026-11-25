@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.1 — Full 30+ Supplement Compatibility Matrix & Searchable Reference Guide
+- **Expanded Compatibility Engine (`SupplementInteractionEngine.kt`):** Added 32+ recognized supplement ingredients across sports performance (`Citrulline`, `Beta-Alanine`, `BCAA/EAA`, `Electrolytes`, `L-Carnitine`, `Taurine`), vitamins (`D3`, `K2`, `A`, `E`, `C`, `B-Complex/B12`, `Multivitamin`), minerals (`Zinc`, `Magnesium`, `Calcium`, `Iron`, `Copper`, `Selenium`, `Iodine`, `Potassium`, `Boron`), joints, sleep & adaptogens (`Collagen`, `Glucosamine+MSM`, `Curcumin`, `Ashwagandha`, `L-Theanine`, `Melatonin`, `Glycine`, `CoQ10`, `Rhodiola`, `Probiotics`, `NAC`, `Berberine`, `Psyllium Fiber`). Detects synergies, 2h mineral/fiber separation conflicts, multivitamin overlaps, blood-thinning stacks, and schedule timing cautions.
+- **Searchable Compatibility Reference Sheet (`StackScreen.kt`):** Added a 1-tap **Compatibility Guide (30+)** sheet with search, category filters, `Pairs well ✓` / `Avoid together ✕` breakdowns, 1-tap `+ Stack` prefill, and live compatibility warnings against your current stack inside `AddEditSupplementSheet`.
+- **Verification:** Expanded `SupplementInteractionEngineTest` to test all major synergy & separation conflict rules across 30+ supplements.
+
 ## v1.5.0 — Health Tracker Rebrand, Hybrid Icon & Full Stack Biohacking Module
 - **Brand Identity & Hybrid Barbell-ECG Icon:** Rebranded user-facing strings to **Health Tracker** (keeping `applicationId = "com.gymtracker.app"` and Room `version = 1` intact) and introduced a new OLED adaptive icon (`ic_launcher_foreground.xml`, `ic_launcher_background.xml`, `ic_launcher_monochrome.xml`) plus unified status-bar notification icon (`ic_stat_health_tracker.xml`).
 - **Supplement Stack Tracker (`StackScreen.kt`, `StackViewModel.kt`, `SupplementRepository.kt`):** Added a 1-tap starter stack tuned to Vitamin D3, Omega-3, Zinc, Stim-Free Pre-Workout, Whey Protein, Creatine, and Magnesium, grouped into 4 daily time slots with servings inventory, low-stock restock alerts, ON/OFF cycle tracking, 14-day adherence/streak stats, and intake history.
