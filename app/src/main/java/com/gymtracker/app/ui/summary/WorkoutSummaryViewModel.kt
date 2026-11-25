@@ -8,13 +8,17 @@ import com.gymtracker.app.data.db.HrSampleEntity
 import com.gymtracker.app.data.db.MetricsDao
 import com.gymtracker.app.data.db.RoutineDao
 import com.gymtracker.app.data.db.SetMetricsEntity
+import com.gymtracker.app.data.db.SupplementItemEntity
+import com.gymtracker.app.data.db.SupplementTrigger
 import com.gymtracker.app.data.db.WorkoutFull
 import com.gymtracker.app.data.health.HcSession
 import com.gymtracker.app.data.health.HealthSyncRepository
 import com.gymtracker.app.data.prefs.UserPreferences
 import com.gymtracker.app.data.prefs.UserPreferencesRepository
+import com.gymtracker.app.data.repo.SupplementRepository
 import com.gymtracker.app.data.repo.WorkoutRepository
 import com.gymtracker.app.domain.MuscleRecoveryEngine
+import com.gymtracker.app.domain.SupplementScheduleEngine
 import com.gymtracker.app.domain.WorkoutMuscleAnalysis
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +29,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import javax.inject.Inject
 
 data class SummaryUiState(
@@ -33,6 +41,7 @@ data class SummaryUiState(
     val setMetricsById: Map<Long, SetMetricsEntity> = emptyMap(),
     val inferredSupersetsByExId: Map<Long, Int> = emptyMap(),
     val muscleAnalysis: WorkoutMuscleAnalysis? = null,
+    val pendingPostWorkoutSupplements: List<SupplementItemEntity> = emptyList(),
     val hrMax: Int = 185,
     val isSyncingHc: Boolean = false,
     val candidateSessions: List<HcSession>? = null
@@ -46,6 +55,7 @@ class WorkoutSummaryViewModel @Inject constructor(
     private val database: GymTrackerDatabase,
     metricsDao: MetricsDao,
     private val healthSyncRepository: HealthSyncRepository,
+    private val supplementRepository: SupplementRepository,
     prefsRepo: UserPreferencesRepository
 ) : ViewModel() {
 
@@ -54,13 +64,20 @@ class WorkoutSummaryViewModel @Inject constructor(
     private val candidates = MutableStateFlow<List<HcSession>?>(null)
     private val inferredSupersets = MutableStateFlow<Map<Long, Int>>(emptyMap())
 
+    private val postWorkoutStackFlow = combine(
+        supplementRepository.observeVisibleStack(),
+        supplementRepository.observeLogsSince(LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant())
+    ) { stack, logs ->
+        stack to logs
+    }
+
     val uiState: StateFlow<SummaryUiState> = combine(
         workoutRepository.observeWorkout(workoutId),
         metricsDao.observeHrSamples(workoutId),
         metricsDao.observeSetMetricsForWorkout(workoutId),
         workoutRepository.observeCompletedWorkouts(),
-        combine(prefsRepo.preferences, syncing, candidates, inferredSupersets) { p, s, c, ss ->
-            ExtraSummary(p, s, c, ss)
+        combine(prefsRepo.preferences, syncing, candidates, inferredSupersets, postWorkoutStackFlow) { p, s, c, ss, stackPair ->
+            ExtraSummary(p, s, c, ss, stackPair.first, stackPair.second)
         }
     ) { wf, hr, setMetrics, completedHistory, extra ->
         val mAnalysis = wf?.let {
@@ -71,12 +88,28 @@ class WorkoutSummaryViewModel @Inject constructor(
                 bodyweightKg = extra.prefs.defaultBodyWeightKg
             )
         }
+
+        val now = Instant.now()
+        val today = LocalDate.now(ZoneId.systemDefault())
+        val isRecentWorkout = wf?.workout?.endedAt?.let { ended ->
+            Duration.between(ended, now).toHours() in 0..12
+        } ?: false
+        val takenTodayIds = extra.todayLogs.map { it.supplementId }.toSet()
+        val pendingPost = if (isRecentWorkout) {
+            extra.visibleStack.filter { sw ->
+                sw.item.id !in takenTodayIds &&
+                    SupplementScheduleEngine.isCycleActiveOnDate(sw.item, today) &&
+                    sw.schedules.any { it.enabled && it.deletedAt == null && it.triggerType == SupplementTrigger.AFTER_WORKOUT }
+            }.map { it.item }
+        } else emptyList()
+
         SummaryUiState(
             workoutFull = wf,
             hrSamples = hr,
             setMetricsById = setMetrics.associateBy { it.setId },
             inferredSupersetsByExId = extra.inferredSupersets,
             muscleAnalysis = mAnalysis,
+            pendingPostWorkoutSupplements = pendingPost,
             hrMax = extra.prefs.hrMax,
             isSyncingHc = extra.syncing,
             candidateSessions = extra.candidates
@@ -87,7 +120,9 @@ class WorkoutSummaryViewModel @Inject constructor(
         val prefs: UserPreferences,
         val syncing: Boolean,
         val candidates: List<HcSession>?,
-        val inferredSupersets: Map<Long, Int>
+        val inferredSupersets: Map<Long, Int>,
+        val visibleStack: List<com.gymtracker.app.data.db.SupplementWithSchedules>,
+        val todayLogs: List<com.gymtracker.app.data.db.SupplementLogEntity>
     )
 
     init {
@@ -145,6 +180,12 @@ class WorkoutSummaryViewModel @Inject constructor(
         viewModelScope.launch {
             workoutRepository.discardWorkout(workoutId)
             onDeleted()
+        }
+    }
+
+    fun logPostWorkoutSupplement(itemId: Long) {
+        viewModelScope.launch {
+            supplementRepository.logIntake(itemId = itemId, linkedWorkoutId = workoutId)
         }
     }
 }

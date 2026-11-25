@@ -1,4 +1,4 @@
-# HealthTracker (GymTracker OS)
+# Health Tracker
 
 Personal Android gym & biometrics tracker built for **Samsung Galaxy S25 Ultra + OnePlus Watch 3 (OHealth + Health Connect) + Xiaomi Smart Scale (`XMTZC05HM` BLE)** with **Jefit CSV history migration**, **PR / 1RM analytics**, **Smart Hybrid Calories**, **Muscle Stimulus & Recovery**, **Supabase cloud sync**, and **bilingual Ukrainian / English** support.
 
@@ -54,5 +54,5 @@ Output APK: `app\build\outputs\apk\debug\app-debug.apk`.
    - In Android Settings → Health Connect → App permissions → **JEFIT**, revoke write & read access so Jefit stops creating duplicate sessions.
 5. **During Gym Sessions:**
    - Start **Strength training** on OnePlus Watch 3.
-   - Start your Routine Day in HealthTracker (toggle **Took Pre-Workout ⚡** if applicable).
+   - Start your Routine Day in Health Tracker (toggle **Took Pre-Workout ⚡** if applicable).
    - Tap **✓** after each set. When you finish, the app automatically merges OHealth HR + calories in the background without writing duplicate sessions back to Health Connect.

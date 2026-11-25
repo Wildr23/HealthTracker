@@ -33,7 +33,8 @@ class WorkoutRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: GymTrackerDatabase,
     private val seeder: ExerciseCatalogSeeder,
-    private val metricsRecomputer: WorkoutMetricsRecomputer
+    private val metricsRecomputer: WorkoutMetricsRecomputer,
+    private val supplementRepository: SupplementRepository
 ) {
     fun observeCompletedWorkouts(): Flow<List<WorkoutFull>> =
         database.workoutDao().observeCompletedWorkoutsFull()
@@ -54,6 +55,8 @@ class WorkoutRepository @Inject constructor(
             if (existing != null) return@withContext existing.workout.id
 
             val now = Instant.now()
+            val hasRecentPre = supplementRepository.findRecentPreWorkoutLog(90L) != null
+            val effectivePre = tookPreWorkout || hasRecentPre
             val dayWithExercises = routineDayId?.let { database.routineDao().getDayWithExercises(it) }
             val title = customTitle?.takeIf { it.isNotBlank() } ?: dayWithExercises?.day?.name
 
@@ -65,7 +68,7 @@ class WorkoutRepository @Inject constructor(
                         title = title,
                         source = DataSource.APP,
                         externalId = null,
-                        tookPreWorkout = tookPreWorkout,
+                        tookPreWorkout = effectivePre,
                         isInProgress = true,
                         hcStatus = HcStatus.NOT_ATTEMPTED,
                         updatedAt = now,
@@ -105,6 +108,7 @@ class WorkoutRepository @Inject constructor(
                 }
                 wId
             }
+            supplementRepository.syncPreWorkoutOnWorkoutStart(workoutId, effectivePre)
             workoutId
         }
 
@@ -113,6 +117,7 @@ class WorkoutRepository @Inject constructor(
         database.workoutDao().updateWorkout(
             w.copy(tookPreWorkout = took, updatedAt = Instant.now(), syncState = SyncState.PENDING_UPLOAD)
         )
+        supplementRepository.syncPreWorkoutOnWorkoutToggle(workoutId, took)
     }
 
     suspend fun addExerciseToWorkout(workoutId: Long, exerciseId: Long) = withContext(Dispatchers.IO) {

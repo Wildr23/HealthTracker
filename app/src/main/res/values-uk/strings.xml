@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">GymTracker OS</string>
+    <string name="app_name">Health Tracker</string>
 
     <!-- Tabs & Navigation -->
     <string name="tab_today">Сьогодні</string>
@@ -65,8 +65,8 @@
     <string name="backfill_notif_done_body">Знайдено дані годинника для %1$d з %2$d тренувань</string>
 
     <!-- Health Connect Rationale & Status -->
-    <string name="hc_rationale_title">Як GymTracker працює з Health Connect</string>
-    <string name="hc_rationale_body">GymTracker лише ЧИТАЄ пульс, калорії, кроки, сон, кисень у крові (SpO₂) та сесії тренувань, записані твоїм OnePlus Watch 3 через OHealth.\n\nДодаток ніколи не записує дублікати назад у Health Connect. Усі дані зберігаються локально на телефоні (з можливістю власних резервних копій).</string>
+    <string name="hc_rationale_title">Як Health Tracker працює з Health Connect</string>
+    <string name="hc_rationale_body">Health Tracker лише ЧИТАЄ пульс, калорії, кроки, сон, кисень у крові (SpO₂) та сесії тренувань, записані твоїм OnePlus Watch 3 через OHealth.\n\nДодаток ніколи не записує дублікати назад у Health Connect. Усі дані зберігаються локально на телефоні (з можливістю власних резервних копій).</string>
     <string name="hc_status_matched">Годинник підключено</string>
     <string name="hc_status_pending">Очікування синхронізації</string>
     <string name="hc_status_hr_only">Лише фоновий пульс</string>
@@ -585,4 +585,82 @@
     <string name="body_metric_delta">Зміна</string>
     <string name="body_metric_avg">Середнє</string>
     <string name="body_need_more_points">Зробіть щонайменше 2 зважування з вагами, щоб побачити графік цього показника.</string>
+
+    <!-- v1.5.0 Stack Supplements, Caffeine Sleep Guard & Two-Way Pre-Workout Sync -->
+    <string name="today_preworkout_logged_ago">Передтрен ⚡ (%1$d хв тому)</string>
+    <string name="today_stack_summary">Стек сьогодні: %1$d / %2$d</string>
+    <string name="today_stack_caffeine_bed">Кофеїн о %1$s: %2$d мг</string>
+    <string name="summary_post_workout_stack_title">Після тренування (Стек) — натисни щоб відмітити:</string>
+    <string name="stack_tab_today">Сьогодні</string>
+    <string name="stack_tab_inventory">Мої добавки</string>
+    <string name="stack_progress_title">План на день</string>
+    <string name="stack_streak_adherence">Серія %1$d дн. • %2$d%% за 14 дн.</string>
+    <string name="stack_caffeine_title">Кофеїн і сон</string>
+    <string name="stack_caffeine_now">%1$d мг зараз</string>
+    <string name="stack_caffeine_bed_target">Сон %1$s</string>
+    <string name="stack_caffeine_bed_proj">О %1$s: ~%2$d мг</string>
+    <string name="stack_caffeine_safe">Сон у безпеці ✓</string>
+    <string name="stack_caffeine_moderate">Помірний (&gt;50 мг)</string>
+    <string name="stack_caffeine_high">Заважатиме сну</string>
+    <string name="stack_caffeine_safe_from">Безпечно (≤50 мг) з %1$s</string>
+    <string name="stack_caffeine_total_today">За сьогодні: %1$d мг</string>
+    <string name="stack_quick_espresso">+ Еспресо 75 мг</string>
+    <string name="stack_quick_coffee">+ Кава 100 мг</string>
+    <string name="stack_quick_energy">+ Енергетик 160 мг</string>
+    <string name="stack_low_stock_title">Закінчуються</string>
+    <string name="stack_restock_btn">Поповнити</string>
+    <string name="stack_restock_dialog_title">Поповнити: %1$s</string>
+    <string name="stack_restock_amount_label">Додати порцій</string>
+    <string name="stack_compat_title">Сумісність і поради прийому</string>
+    <string name="stack_slot_morning">Ранок / З їжею</string>
+    <string name="stack_slot_day">День / Вечір</string>
+    <string name="stack_slot_workout">Зал (До / Після)</string>
+    <string name="stack_slot_bedtime">Перед сном</string>
+    <string name="stack_empty_title">Налаштуй свій щоденний стек</string>
+    <string name="stack_empty_desc">Стартовий набір в 1 тап: D3, Омега-3, Цинк, Передтрен (без кофеїну), Протеїн, Креатин та Магній — вже рознесені по часу без конфлікту Цинк/Магній.</string>
+    <string name="stack_seed_cta">Додати мій стек (7 добавок)</string>
+    <string name="stack_add_manual">Додати добавку</string>
+    <string name="stack_reminders_title">Push-нагадування за розкладом</string>
+    <string name="stack_reminders_desc">Сповіщення у заданий час із кнопкою «Прийнято ✓»</string>
+    <string name="stack_bedtime_label">Час сну</string>
+    <string name="stack_servings_left">%1$s порц. • ~%2$d дн.</string>
+    <string name="stack_servings_short">%1$s порц.</string>
+    <string name="stack_cycle_on">Цикл ON %1$d/%2$d</string>
+    <string name="stack_cycle_off">Пауза %1$d/%2$d</string>
+    <string name="stack_history_title">Останні прийоми</string>
+    <string name="stack_history_empty">Ще немає записів прийому.</string>
+    <string name="stack_logged_snackbar">Записано: %1$s</string>
+    <string name="stack_undo">Скасувати</string>
+    <string name="stack_add_title">Нова добавка</string>
+    <string name="stack_edit_title">Редагувати добавку</string>
+    <string name="stack_field_name">Назва</string>
+    <string name="stack_field_category">Категорія</string>
+    <string name="stack_field_dose">Доза</string>
+    <string name="stack_field_unit">Одиниця</string>
+    <string name="stack_field_caffeine">Кофеїн (мг, 0 якщо без)</string>
+    <string name="stack_field_servings">Порцій у банці</string>
+    <string name="stack_field_low_thresh">Попередити при залишку</string>
+    <string name="stack_field_trigger">Коли приймати</string>
+    <string name="stack_field_time">Час нагадування (ГГ:ХХ)</string>
+    <string name="stack_field_cycle_on">Цикл: днів прийом (опц.)</string>
+    <string name="stack_field_cycle_off">Цикл: днів пауза (опц.)</string>
+    <string name="stack_intake_guide_label">Рекомендація прийому:</string>
+    <string name="stack_notif_channel_name">Нагадування про добавки</string>
+    <string name="stack_notif_channel_desc">Нагадування за графіком стеку з кнопкою швидкої відмітки</string>
+    <string name="stack_notif_title">Час прийняти добавки</string>
+    <string name="stack_notif_body">За планом зараз: %1$s</string>
+    <string name="stack_notif_action_take">Прийнято ✓</string>
+    <string name="supp_cat_protein">Протеїн</string>
+    <string name="supp_cat_creatine">Креатин</string>
+    <string name="supp_cat_preworkout">Передтрен</string>
+    <string name="supp_cat_omega3">Омега-3</string>
+    <string name="supp_cat_vitamin">Вітамін</string>
+    <string name="supp_cat_mineral">Мінерал</string>
+    <string name="supp_cat_medication">Препарат</string>
+    <string name="supp_cat_other">Інше</string>
+    <string name="supp_trig_fixed">За часом</string>
+    <string name="supp_trig_meal">З їжею</string>
+    <string name="supp_trig_before_gym">До залу</string>
+    <string name="supp_trig_after_gym">Після залу</string>
+    <string name="supp_trig_bedtime">Перед сном</string>
 </resources>

@@ -109,6 +109,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".work.StackReminderReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".data.scale.XiaomiScaleBootReceiver"
             android:exported="true">
             <intent-filter>

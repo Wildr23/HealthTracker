@@ -29,4 +29,5 @@ object DatabaseModule {
     @Provides fun provideMetricsDao(db: GymTrackerDatabase): MetricsDao = db.metricsDao()
     @Provides fun provideBodyWeightDao(db: GymTrackerDatabase): BodyWeightDao = db.bodyWeightDao()
     @Provides fun provideImportRunDao(db: GymTrackerDatabase): ImportRunDao = db.importRunDao()
+    @Provides fun provideSupplementDao(db: GymTrackerDatabase): SupplementDao = db.supplementDao()
 }

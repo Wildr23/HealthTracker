@@ -60,6 +60,10 @@ data class UserPreferences(
     val scaleLastWakeEpochSec: Long = 0L,
     val scaleIgnoredFamilyCount: Int = 0,
     val dailyStepGoal: Int = 10000,
+    val bedtimeMinutesOfDay: Int = 0, // 0 = 24:00 (00:00)
+    val caffeineHalfLifeHours: Double = 5.0,
+    val caffeineSleepThresholdMg: Int = 50,
+    val stackRemindersEnabled: Boolean = true,
     val supabaseUrl: String = BuildConfig.SUPABASE_URL,
     val supabasePublishableKey: String = BuildConfig.SUPABASE_PUBLISHABLE_KEY,
     val supabaseUserEmail: String? = null,
@@ -101,6 +105,10 @@ class UserPreferencesRepository @Inject constructor(
         val SCALE_LAST_WAKE_SEC = longPreferencesKey("scale_last_wake_epoch_sec")
         val SCALE_IGNORED_FAMILY = intPreferencesKey("scale_ignored_family_count")
         val DAILY_STEP_GOAL = intPreferencesKey("daily_step_goal")
+        val BEDTIME_MINUTES = intPreferencesKey("bedtime_minutes_of_day")
+        val CAFFEINE_HALF_LIFE_H = doublePreferencesKey("caffeine_half_life_hours")
+        val CAFFEINE_SLEEP_THRESH_MG = intPreferencesKey("caffeine_sleep_threshold_mg")
+        val STACK_REMINDERS_ENABLED = booleanPreferencesKey("stack_reminders_enabled")
         val SUPABASE_URL = stringPreferencesKey("supabase_url")
         val SUPABASE_KEY = stringPreferencesKey("supabase_publishable_key")
         val SUPABASE_EMAIL = stringPreferencesKey("supabase_user_email")
@@ -150,6 +158,10 @@ class UserPreferencesRepository @Inject constructor(
             scaleLastWakeEpochSec = prefs[Keys.SCALE_LAST_WAKE_SEC] ?: 0L,
             scaleIgnoredFamilyCount = prefs[Keys.SCALE_IGNORED_FAMILY] ?: 0,
             dailyStepGoal = prefs[Keys.DAILY_STEP_GOAL] ?: 10000,
+            bedtimeMinutesOfDay = prefs[Keys.BEDTIME_MINUTES] ?: 0,
+            caffeineHalfLifeHours = prefs[Keys.CAFFEINE_HALF_LIFE_H] ?: 5.0,
+            caffeineSleepThresholdMg = prefs[Keys.CAFFEINE_SLEEP_THRESH_MG] ?: 50,
+            stackRemindersEnabled = prefs[Keys.STACK_REMINDERS_ENABLED] ?: true,
             supabaseUrl = prefs[Keys.SUPABASE_URL]?.takeIf { it.isNotBlank() } ?: BuildConfig.SUPABASE_URL,
             supabasePublishableKey = prefs[Keys.SUPABASE_KEY]?.takeIf { it.isNotBlank() }
                 ?: BuildConfig.SUPABASE_PUBLISHABLE_KEY,
@@ -242,6 +254,25 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setDailyStepGoal(goal: Int) {
         context.dataStore.edit { prefs ->
             prefs[Keys.DAILY_STEP_GOAL] = goal.coerceIn(1000, 50000)
+        }
+    }
+
+    suspend fun setBedtimeMinutesOfDay(minutes: Int) {
+        val normalized = ((minutes % 1440) + 1440) % 1440
+        context.dataStore.edit { prefs ->
+            prefs[Keys.BEDTIME_MINUTES] = normalized
+        }
+    }
+
+    suspend fun setCaffeineHalfLifeHours(hours: Double) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.CAFFEINE_HALF_LIFE_H] = hours.coerceIn(3.0, 9.0)
+        }
+    }
+
+    suspend fun setStackRemindersEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.STACK_REMINDERS_ENABLED] = enabled
         }
     }
 

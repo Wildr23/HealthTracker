@@ -13,10 +13,15 @@ import com.gymtracker.app.data.health.HealthSyncRepository
 import com.gymtracker.app.data.health.WatchActivityRepository
 import com.gymtracker.app.data.prefs.UserPreferences
 import com.gymtracker.app.data.prefs.UserPreferencesRepository
+import com.gymtracker.app.data.repo.SupplementRepository
 import com.gymtracker.app.data.repo.WorkoutRepository
+import com.gymtracker.app.domain.CaffeineDose
+import com.gymtracker.app.domain.CaffeineHalfLifeEngine
+import com.gymtracker.app.domain.CaffeineSleepStatus
 import com.gymtracker.app.domain.MuscleRecoveryEngine
 import com.gymtracker.app.domain.MuscleRecoverySnapshot
 import com.gymtracker.app.domain.RecoveryMuscleGroup
+import com.gymtracker.app.domain.SupplementScheduleEngine
 import com.gymtracker.app.work.WorkoutTimerService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -26,9 +31,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 data class TodayUiState(
     val activeWorkout: WorkoutFull? = null,
@@ -40,6 +48,13 @@ data class TodayUiState(
     val todaySummary: HcTodaySummary? = null,
     val dailyStepGoal: Int = 10000,
     val tookPreWorkout: Boolean = false,
+    val recentPreWorkoutMinAgo: Long? = null,
+    val stackTakenToday: Int = 0,
+    val stackTotalToday: Int = 0,
+    val caffeineBedtimeMg: Int = 0,
+    val caffeineTotalTodayMg: Int = 0,
+    val caffeineSleepStatus: CaffeineSleepStatus = CaffeineSleepStatus.SAFE,
+    val bedtimeMinutesOfDay: Int = 0,
     val isRefreshingHc: Boolean = false,
     val recovery: MuscleRecoverySnapshot? = null
 )
@@ -52,38 +67,91 @@ class TodayViewModel @Inject constructor(
     private val healthDataSource: HealthDataSource,
     private val healthSyncRepository: HealthSyncRepository,
     private val watchActivityRepository: WatchActivityRepository,
+    private val supplementRepository: SupplementRepository,
     prefsRepo: UserPreferencesRepository
 ) : ViewModel() {
 
     private val permState = MutableStateFlow<HcPermissionState?>(null)
     private val todaySummary = MutableStateFlow<HcTodaySummary?>(null)
-    private val preWorkoutFlag = MutableStateFlow(false)
+    private val preWorkoutOverride = MutableStateFlow<Boolean?>(null)
     private val refreshing = MutableStateFlow(false)
+
+    private val stackSummaryFlow = combine(
+        supplementRepository.observeAllActiveStack(),
+        supplementRepository.observeLogsSince(Instant.now().minusSeconds(36 * 3600L)),
+        supplementRepository.observeRecentPreWorkoutLog(90L)
+    ) { stack, logs, recentPre ->
+        Triple(stack, logs, recentPre)
+    }
 
     val uiState: StateFlow<TodayUiState> = combine(
         workoutRepository.observeActiveWorkout(),
         workoutRepository.observeCompletedWorkouts(),
         routineDao.observeRoutinesWithDays(),
         workoutRepository.observePendingHcCount(),
-        combine(permState, todaySummary, preWorkoutFlag, refreshing, prefsRepo.preferences) { p, s, pw, r, prefs ->
-            ExtraBundle(p, s, pw, r, prefs)
+        combine(
+            permState,
+            todaySummary,
+            preWorkoutOverride,
+            refreshing,
+            combine(prefsRepo.preferences, stackSummaryFlow) { prefs, stackTriple -> prefs to stackTriple }
+        ) { p, s, pw, r, pair ->
+            ExtraBundle(p, s, pw, r, pair.first, pair.second)
         }
     ) { active, completed, routines, pending, extra ->
         val nonExcluded = completed.filter { !it.workout.excludedFromStats }
+        val zone = ZoneId.systemDefault()
+        val now = Instant.now()
+        val today = LocalDate.now(zone)
+        val todayStart = today.atStartOfDay(zone).toInstant()
+
         val injuredMap = extra.prefs.injuredMuscles.mapNotNull { (k, iso) ->
             val grp = runCatching { RecoveryMuscleGroup.valueOf(k) }.getOrNull() ?: return@mapNotNull null
-            val date = runCatching { LocalDate.parse(iso) }.getOrNull() ?: LocalDate.now()
+            val date = runCatching { LocalDate.parse(iso) }.getOrNull() ?: today
             grp to date
         }.toMap()
 
         val recSnapshot = MuscleRecoveryEngine.computeRecoveryState(
             completedWorkouts = nonExcluded,
-            now = Instant.now(),
+            now = now,
             injuredMuscles = injuredMap,
             sleepMinutesLastNight = extra.s?.sleepMinutes?.toInt(),
             formula = extra.prefs.preferredFormula,
             bodyweightKg = extra.prefs.defaultBodyWeightKg
         )
+
+        val (allActiveStack, recentLogs, recentPreLog) = extra.stackTriple
+        val visibleToday = allActiveStack.filter {
+            it.item.notes != SupplementRepository.QUICK_CAFFEINE_TAG &&
+                SupplementScheduleEngine.isCycleActiveOnDate(it.item, today) &&
+                SupplementScheduleEngine.isScheduledForDate(it.schedules, today)
+        }
+        val takenIdsToday = recentLogs
+            .filter { !it.takenAt.isBefore(todayStart) }
+            .map { it.supplementId }
+            .toSet()
+        val stackTaken = visibleToday.count { it.item.id in takenIdsToday }
+
+        val itemsById = allActiveStack.associateBy { it.item.id }
+        val caffeineDoses = recentLogs.mapNotNull { log ->
+            val item = itemsById[log.supplementId]?.item
+            val mg = log.caffeineMg ?: item?.caffeineMgPerServing ?: 0
+            if (mg <= 0) return@mapNotNull null
+            CaffeineDose(log.takenAt, mg, item?.nameEn ?: "Caffeine")
+        }
+        val cafAnalysis = CaffeineHalfLifeEngine.analyze(
+            doses = caffeineDoses,
+            now = now,
+            bedtimeMinutesOfDay = extra.prefs.bedtimeMinutesOfDay,
+            halfLifeHours = extra.prefs.caffeineHalfLifeHours,
+            sleepThresholdMg = extra.prefs.caffeineSleepThresholdMg,
+            zoneId = zone
+        )
+
+        val preMinAgo = recentPreLog?.let {
+            Duration.between(it.takenAt, now).toMinutes().coerceAtLeast(0L)
+        }
+        val effectivePre = extra.pw ?: (recentPreLog != null)
 
         TodayUiState(
             activeWorkout = active,
@@ -94,7 +162,14 @@ class TodayViewModel @Inject constructor(
             permissionState = extra.p,
             todaySummary = extra.s,
             dailyStepGoal = extra.prefs.dailyStepGoal,
-            tookPreWorkout = extra.pw,
+            tookPreWorkout = effectivePre,
+            recentPreWorkoutMinAgo = preMinAgo,
+            stackTakenToday = stackTaken,
+            stackTotalToday = visibleToday.size,
+            caffeineBedtimeMg = cafAnalysis.projectedMgAtBedtime.roundToInt(),
+            caffeineTotalTodayMg = cafAnalysis.totalTodayMg,
+            caffeineSleepStatus = cafAnalysis.status,
+            bedtimeMinutesOfDay = extra.prefs.bedtimeMinutesOfDay,
             isRefreshingHc = extra.r,
             recovery = recSnapshot
         )
@@ -131,7 +206,7 @@ class TodayViewModel @Inject constructor(
     }
 
     fun setPreWorkout(took: Boolean) {
-        preWorkoutFlag.value = took
+        preWorkoutOverride.value = took
     }
 
     fun requiredPermissionsToRequest(): Set<String> {
@@ -142,7 +217,9 @@ class TodayViewModel @Inject constructor(
 
     fun startWorkout(routineDayId: Long?, title: String?, onStarted: (Long) -> Unit) {
         viewModelScope.launch {
-            val wId = workoutRepository.startWorkout(routineDayId, preWorkoutFlag.value, title)
+            val flag = uiState.value.tookPreWorkout
+            val wId = workoutRepository.startWorkout(routineDayId, flag, title)
+            preWorkoutOverride.value = null
             WorkoutTimerService.start(context, System.currentTimeMillis(), title ?: "Gym Workout")
             onStarted(wId)
         }
@@ -151,8 +228,9 @@ class TodayViewModel @Inject constructor(
     private data class ExtraBundle(
         val p: HcPermissionState?,
         val s: HcTodaySummary?,
-        val pw: Boolean,
+        val pw: Boolean?,
         val r: Boolean,
-        val prefs: UserPreferences
+        val prefs: UserPreferences,
+        val stackTriple: Triple<List<com.gymtracker.app.data.db.SupplementWithSchedules>, List<com.gymtracker.app.data.db.SupplementLogEntity>, com.gymtracker.app.data.db.SupplementLogEntity?>
     )
 }

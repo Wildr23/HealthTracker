@@ -1,13 +1,114 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- Left & right sleeve connectors -->
     <path
-        android:fillColor="#F5B301"
-        android:pathData="M24,49h60v10h-60z" />
+        android:fillColor="#FF5B6B85"
+        android:pathData="M28.5,51.8 H31.5 V56.2 H28.5 Z M76.5,51.8 H79.5 V56.2 H76.5 Z" />
+
+    <!-- Left outer barbell plate -->
+    <path android:pathData="M26.5,43 H26.5 a2.5,2.5 0 0 1 2.5,2.5 V62.5 a2.5,2.5 0 0 1 -2.5,2.5 H26.5 a2.5,2.5 0 0 1 -2.5,-2.5 V45.5 a2.5,2.5 0 0 1 2.5,-2.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="24"
+                android:startY="43"
+                android:endX="29"
+                android:endY="65">
+                <item android:offset="0" android:color="#FFDCE8FF" />
+                <item android:offset="1" android:color="#FF95B3E8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Left inner main barbell plate -->
+    <path android:pathData="M34,36 H34 a3,3 0 0 1 3,3 V69 a3,3 0 0 1 -3,3 H34 a3,3 0 0 1 -3,-3 V39 a3,3 0 0 1 3,-3 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="31"
+                android:startY="36"
+                android:endX="37"
+                android:endY="72">
+                <item android:offset="0" android:color="#FFFFFFFF" />
+                <item android:offset="1" android:color="#FFC7DAFA" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Right inner main barbell plate -->
+    <path android:pathData="M74,36 H74 a3,3 0 0 1 3,3 V69 a3,3 0 0 1 -3,3 H74 a3,3 0 0 1 -3,-3 V39 a3,3 0 0 1 3,-3 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="71"
+                android:startY="36"
+                android:endX="77"
+                android:endY="72">
+                <item android:offset="0" android:color="#FFFFFFFF" />
+                <item android:offset="1" android:color="#FFC2F0DC" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Right outer barbell plate -->
+    <path android:pathData="M81.5,43 H81.5 a2.5,2.5 0 0 1 2.5,2.5 V62.5 a2.5,2.5 0 0 1 -2.5,2.5 H81.5 a2.5,2.5 0 0 1 -2.5,-2.5 V45.5 a2.5,2.5 0 0 1 2.5,-2.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="79"
+                android:startY="43"
+                android:endX="84"
+                android:endY="65">
+                <item android:offset="0" android:color="#FFD5F5E7" />
+                <item android:offset="1" android:color="#FF8CD9B8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Soft glow halo under ECG pulse shaft -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M30,36h8v36h-8zM70,36h8v36h-8zM20,41h7v26h-7zM81,41h7v26h-7z" />
+        android:pathData="M36.5,54 L42.5,54 L45.5,59.5 L51.5,34 L56.5,72 L60.5,49.5 L63.5,54 L71.5,54"
+        android:strokeWidth="8.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="36.5"
+                android:startY="54"
+                android:endX="71.5"
+                android:endY="54">
+                <item android:offset="0" android:color="#442F7CF6" />
+                <item android:offset="0.5" android:color="#4438BDF8" />
+                <item android:offset="1" android:color="#4433B870" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Crisp ECG heartbeat pulse barbell shaft -->
+    <path
+        android:pathData="M36.5,54 L42.5,54 L45.5,59.5 L51.5,34 L56.5,72 L60.5,49.5 L63.5,54 L71.5,54"
+        android:strokeWidth="4.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="36.5"
+                android:startY="54"
+                android:endX="71.5"
+                android:endY="54">
+                <item android:offset="0" android:color="#FF2F7CF6" />
+                <item android:offset="0.38" android:color="#FF38BDF8" />
+                <item android:offset="0.72" android:color="#FF2DD4BF" />
+                <item android:offset="1" android:color="#FF33B870" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

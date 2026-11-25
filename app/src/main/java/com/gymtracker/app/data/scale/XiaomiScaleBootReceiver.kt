@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothAdapter
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.gymtracker.app.work.StackReminderScheduler
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,9 @@ class XiaomiScaleBootReceiver : BroadcastReceiver() {
 
     @Inject
     lateinit var bleController: XiaomiScaleBleController
+
+    @Inject
+    lateinit var stackReminderScheduler: StackReminderScheduler
 
     override fun onReceive(context: Context, intent: Intent) {
         val shouldSync = when (intent.action) {
@@ -32,6 +36,9 @@ class XiaomiScaleBootReceiver : BroadcastReceiver() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 bleController.syncBackgroundScan()
+                if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) {
+                    stackReminderScheduler.rescheduleAll()
+                }
             } finally {
                 pendingResult.finish()
             }

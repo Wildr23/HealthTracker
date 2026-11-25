@@ -7,6 +7,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -26,6 +30,9 @@ import androidx.compose.ui.unit.sp
 import com.gymtracker.app.data.db.BodyWeightEntity
 import com.gymtracker.app.data.db.HrSampleEntity
 import com.gymtracker.app.data.db.PrType
+import com.gymtracker.app.domain.CaffeineAnalysis
+import com.gymtracker.app.domain.CaffeineCurvePoint
+import com.gymtracker.app.domain.CaffeineSleepStatus
 import com.gymtracker.app.domain.MetricDataPoint
 import com.gymtracker.app.domain.SessionPrPoint
 import com.gymtracker.app.domain.TrainingBreak
@@ -38,6 +45,7 @@ import com.gymtracker.app.ui.theme.TealAccent
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -787,5 +795,164 @@ fun WatchDailyBarChart(
             val lastLbl = measurer.measure(dates.last().format(fmt), TextStyle(color = axisColor, fontSize = 9.sp))
             drawText(lastLbl, topLeft = Offset(size.width - rightPad - lastLbl.size.width, topPad + plotH + 4.dp.toPx()))
         }
+    }
+}
+
+@Composable
+fun CaffeineDecayChart(
+    analysis: CaffeineAnalysis,
+    now: Instant,
+    modifier: Modifier = Modifier
+) {
+    val measurer = rememberTextMeasurer()
+    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+    val pts = analysis.curvePoints
+    if (pts.size < 2) {
+        Box(modifier = modifier.fillMaxWidth().height(155.dp))
+        return
+    }
+
+    val accentColor = when (analysis.status) {
+        CaffeineSleepStatus.SAFE -> ElectricBlue
+        CaffeineSleepStatus.MODERATE -> GoldPr
+        CaffeineSleepStatus.HIGH -> CoralEnergy
+    }
+
+    var selectedIdx by remember(pts) { mutableStateOf<Int?>(null) }
+
+    val maxMg = maxOf(
+        pts.maxOf { it.mg },
+        analysis.sleepThresholdMg.toDouble() * 1.4,
+        60.0
+    ) * 1.1
+    val startEpoch = pts.first().instant.epochSecond.toDouble()
+    val endEpoch = pts.last().instant.epochSecond.toDouble()
+    val spanEpoch = (endEpoch - startEpoch).coerceAtLeast(3600.0)
+    val zone = ZoneId.systemDefault()
+    val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(165.dp)
+            .pointerInput(pts) {
+                detectTapGestures { offset ->
+                    val leftPad = 36.dp.toPx()
+                    val rightPad = 12.dp.toPx()
+                    val plotW = (size.width - leftPad - rightPad).coerceAtLeast(1f)
+                    val ratio = ((offset.x - leftPad) / plotW).coerceIn(0f, 1f)
+                    val idx = (ratio * (pts.size - 1)).roundToInt().coerceIn(0, pts.lastIndex)
+                    selectedIdx = if (selectedIdx == idx) null else idx
+                }
+            }
+    ) {
+        val leftPad = 36.dp.toPx()
+        val rightPad = 12.dp.toPx()
+        val topPad = 14.dp.toPx()
+        val bottomPad = 24.dp.toPx()
+        val plotW = (size.width - leftPad - rightPad).coerceAtLeast(1f)
+        val plotH = (size.height - topPad - bottomPad).coerceAtLeast(1f)
+
+        fun xFor(t: Instant): Float {
+            val r = ((t.epochSecond - startEpoch) / spanEpoch).toFloat().coerceIn(0f, 1f)
+            return leftPad + plotW * r
+        }
+
+        fun yFor(mg: Double): Float {
+            val r = (mg / maxMg).toFloat().coerceIn(0f, 1f)
+            return topPad + plotH * (1f - r)
+        }
+
+        // Horizontal Y grid
+        listOf(0.0, maxMg * 0.5, maxMg).forEach { mgVal ->
+            val y = yFor(mgVal)
+            drawLine(gridColor, Offset(leftPad, y), Offset(size.width - rightPad, y), 1.dp.toPx())
+            val lbl = measurer.measure("${mgVal.roundToInt()}", TextStyle(color = axisColor, fontSize = 9.sp))
+            drawText(lbl, topLeft = Offset(2.dp.toPx(), y - lbl.size.height / 2f))
+        }
+
+        // Sleep threshold (50 mg) horizontal emerald dashed line
+        val threshY = yFor(analysis.sleepThresholdMg.toDouble())
+        drawLine(
+            color = EmeraldRest.copy(alpha = 0.85f),
+            start = Offset(leftPad, threshY),
+            end = Offset(size.width - rightPad, threshY),
+            strokeWidth = 1.4.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
+        )
+
+        // Vertical Bedtime dashed line
+        if (!analysis.bedtimeInstant.isBefore(pts.first().instant) &&
+            !analysis.bedtimeInstant.isAfter(pts.last().instant)
+        ) {
+            val bx = xFor(analysis.bedtimeInstant)
+            drawLine(
+                color = EmeraldRest.copy(alpha = 0.7f),
+                start = Offset(bx, topPad),
+                end = Offset(bx, topPad + plotH),
+                strokeWidth = 1.4.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f))
+            )
+            val bedTxt = measurer.measure(
+                analysis.bedtimeInstant.atZone(zone).toLocalTime().format(timeFmt),
+                TextStyle(color = EmeraldRest, fontSize = 9.sp)
+            )
+            drawText(
+                bedTxt,
+                topLeft = Offset((bx - bedTxt.size.width / 2f).coerceIn(leftPad, size.width - rightPad - bedTxt.size.width), 0f)
+            )
+        }
+
+        // Curve + Gradient fill
+        val coords = pts.map { Offset(xFor(it.instant), yFor(it.mg)) }
+        val linePath = Path()
+        val fillPath = Path()
+        coords.forEachIndexed { idx, c ->
+            if (idx == 0) {
+                linePath.moveTo(c.x, c.y)
+                fillPath.moveTo(c.x, topPad + plotH)
+                fillPath.lineTo(c.x, c.y)
+            } else {
+                linePath.lineTo(c.x, c.y)
+                fillPath.lineTo(c.x, c.y)
+            }
+        }
+        fillPath.lineTo(coords.last().x, topPad + plotH)
+        fillPath.close()
+
+        drawPath(
+            path = fillPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(accentColor.copy(alpha = 0.30f), accentColor.copy(alpha = 0.02f)),
+                startY = topPad,
+                endY = topPad + plotH
+            )
+        )
+        drawPath(linePath, accentColor, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
+
+        // Current "Now" dot
+        val nowX = xFor(now)
+        val nowY = yFor(analysis.activeMgNow)
+        drawCircle(accentColor.copy(alpha = 0.25f), radius = 8.dp.toPx(), center = Offset(nowX, nowY))
+        drawCircle(accentColor, radius = 4.dp.toPx(), center = Offset(nowX, nowY))
+
+        // Selection crosshair
+        selectedIdx?.let { idx ->
+            val p = pts[idx]
+            val c = coords[idx]
+            drawLine(axisColor.copy(alpha = 0.6f), Offset(c.x, topPad), Offset(c.x, topPad + plotH), 1.2.dp.toPx())
+            drawCircle(Color.White, radius = 4.5.dp.toPx(), center = c)
+            val tipText = "${p.instant.atZone(zone).toLocalTime().format(timeFmt)} • ${p.mg.roundToInt()} mg"
+            val tip = measurer.measure(tipText, TextStyle(color = Color.White, fontSize = 10.sp))
+            val tx = (c.x - tip.size.width / 2f).coerceIn(leftPad, size.width - rightPad - tip.size.width)
+            drawText(tip, topLeft = Offset(tx, 0f))
+        }
+
+        // X axis first / now / last time labels
+        val firstLbl = measurer.measure(pts.first().instant.atZone(zone).toLocalTime().format(timeFmt), TextStyle(color = axisColor, fontSize = 9.sp))
+        drawText(firstLbl, topLeft = Offset(leftPad, topPad + plotH + 4.dp.toPx()))
+        val lastLbl = measurer.measure(pts.last().instant.atZone(zone).toLocalTime().format(timeFmt), TextStyle(color = axisColor, fontSize = 9.sp))
+        drawText(lastLbl, topLeft = Offset(size.width - rightPad - lastLbl.size.width, topPad + plotH + 4.dp.toPx()))
     }
 }

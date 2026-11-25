@@ -164,7 +164,16 @@ fun GymTrackerApp(
                     onOpenWorkoutSummary = { wId -> navController.navigate(Routes.workoutSummary(wId)) },
                     onOpenJefitImport = { navController.navigate(Routes.JEFIT_IMPORT) },
                     onOpenMuscleRecovery = { navController.navigate(Routes.MUSCLE_RECOVERY) },
-                    onOpenWatchActivity = { navController.navigate(Routes.WATCH_ACTIVITY) }
+                    onOpenWatchActivity = { navController.navigate(Routes.WATCH_ACTIVITY) },
+                    onOpenStack = {
+                        navController.navigate(Routes.STACK) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 )
             }
             composable(Routes.GYM) {

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">GymTracker OS</string>
+    <string name="app_name">Health Tracker</string>
 
     <!-- Tabs & Navigation -->
     <string name="tab_today">Today</string>
@@ -59,8 +59,8 @@
     <string name="backfill_notif_done_body">Matched %1$d of %2$d workouts with watch data</string>
 
     <!-- Health Connect Rationale & Status -->
-    <string name="hc_rationale_title">How GymTracker uses Health Connect</string>
-    <string name="hc_rationale_body">GymTracker only READS your heart rate, calories, steps, sleep, oxygen saturation, and exercise sessions recorded by your OnePlus Watch 3 via OHealth.\n\nIt never writes duplicate workout sessions back to Health Connect. All your data stays locally on your device (with optional user-controlled backups).</string>
+    <string name="hc_rationale_title">How Health Tracker uses Health Connect</string>
+    <string name="hc_rationale_body">Health Tracker only READS your heart rate, calories, steps, sleep, oxygen saturation, and exercise sessions recorded by your OnePlus Watch 3 via OHealth.\n\nIt never writes duplicate workout sessions back to Health Connect. All your data stays locally on your device (with optional user-controlled backups).</string>
     <string name="hc_status_matched">Watch Matched</string>
     <string name="hc_status_pending">Waiting for watch sync</string>
     <string name="hc_status_hr_only">Background HR only</string>
@@ -579,4 +579,82 @@
     <string name="body_metric_delta">Change</string>
     <string name="body_metric_avg">Avg</string>
     <string name="body_need_more_points">Step on the scale at least twice to plot this composition trend line.</string>
+
+    <!-- v1.5.0 Stack Supplements, Caffeine Sleep Guard & Two-Way Pre-Workout Sync -->
+    <string name="today_preworkout_logged_ago">Pre-Workout ⚡ (%1$d min ago)</string>
+    <string name="today_stack_summary">Today\'s Stack: %1$d / %2$d</string>
+    <string name="today_stack_caffeine_bed">Caffeine at %1$s: %2$d mg</string>
+    <string name="summary_post_workout_stack_title">Post-Workout Stack — tap to log:</string>
+    <string name="stack_tab_today">Today</string>
+    <string name="stack_tab_inventory">My Stack</string>
+    <string name="stack_progress_title">Daily Checklist</string>
+    <string name="stack_streak_adherence">%1$dd streak • %2$d%% 14d</string>
+    <string name="stack_caffeine_title">Caffeine &amp; Sleep Guard</string>
+    <string name="stack_caffeine_now">%1$d mg active</string>
+    <string name="stack_caffeine_bed_target">Sleep %1$s</string>
+    <string name="stack_caffeine_bed_proj">At %1$s: ~%2$d mg</string>
+    <string name="stack_caffeine_safe">Sleep safe ✓</string>
+    <string name="stack_caffeine_moderate">Moderate (&gt;50 mg)</string>
+    <string name="stack_caffeine_high">May hurt sleep</string>
+    <string name="stack_caffeine_safe_from">Drops ≤50 mg at %1$s</string>
+    <string name="stack_caffeine_total_today">Today total: %1$d mg</string>
+    <string name="stack_quick_espresso">+ Espresso 75mg</string>
+    <string name="stack_quick_coffee">+ Coffee 100mg</string>
+    <string name="stack_quick_energy">+ Energy 160mg</string>
+    <string name="stack_low_stock_title">Running Low</string>
+    <string name="stack_restock_btn">Restock</string>
+    <string name="stack_restock_dialog_title">Restock %1$s</string>
+    <string name="stack_restock_amount_label">Add servings</string>
+    <string name="stack_compat_title">Stack Compatibility &amp; Guidance</string>
+    <string name="stack_slot_morning">Morning / With Meal</string>
+    <string name="stack_slot_day">Day / Afternoon</string>
+    <string name="stack_slot_workout">Gym (Pre / Post)</string>
+    <string name="stack_slot_bedtime">Before Bed</string>
+    <string name="stack_empty_title">Set Up Your Daily Stack</string>
+    <string name="stack_empty_desc">One-tap starter pack: Vitamin D3, Omega-3, Zinc, Stim-Free Pre-Workout, Whey Protein, Creatine, and Magnesium — pre-spaced to avoid Zinc/Magnesium conflicts.</string>
+    <string name="stack_seed_cta">Add Starter Stack (7 items)</string>
+    <string name="stack_add_manual">Add Supplement</string>
+    <string name="stack_reminders_title">Push Schedule Reminders</string>
+    <string name="stack_reminders_desc">Notify at scheduled times with 1-tap Taken ✓ button</string>
+    <string name="stack_bedtime_label">Target Bedtime</string>
+    <string name="stack_servings_left">%1$s servings • ~%2$d d left</string>
+    <string name="stack_servings_short">%1$s left</string>
+    <string name="stack_cycle_on">Cycle ON %1$d/%2$d</string>
+    <string name="stack_cycle_off">Cycle Pause %1$d/%2$d</string>
+    <string name="stack_history_title">Recent Intake History</string>
+    <string name="stack_history_empty">No supplement logs yet.</string>
+    <string name="stack_logged_snackbar">Logged: %1$s</string>
+    <string name="stack_undo">Undo</string>
+    <string name="stack_add_title">Add Supplement</string>
+    <string name="stack_edit_title">Edit Supplement</string>
+    <string name="stack_field_name">Name</string>
+    <string name="stack_field_category">Category</string>
+    <string name="stack_field_dose">Dose</string>
+    <string name="stack_field_unit">Unit</string>
+    <string name="stack_field_caffeine">Caffeine (mg, 0 if none)</string>
+    <string name="stack_field_servings">Servings in tub/pack</string>
+    <string name="stack_field_low_thresh">Low-stock alert at</string>
+    <string name="stack_field_trigger">When to take</string>
+    <string name="stack_field_time">Reminder time (HH:MM)</string>
+    <string name="stack_field_cycle_on">Cycle ON days (optional)</string>
+    <string name="stack_field_cycle_off">Cycle OFF days (optional)</string>
+    <string name="stack_intake_guide_label">Intake recommendation:</string>
+    <string name="stack_notif_channel_name">Supplement Stack Reminders</string>
+    <string name="stack_notif_channel_desc">Scheduled supplement reminders with quick Mark Taken action</string>
+    <string name="stack_notif_title">Time for your stack</string>
+    <string name="stack_notif_body">Due now: %1$s</string>
+    <string name="stack_notif_action_take">Taken ✓</string>
+    <string name="supp_cat_protein">Protein</string>
+    <string name="supp_cat_creatine">Creatine</string>
+    <string name="supp_cat_preworkout">Pre-Workout</string>
+    <string name="supp_cat_omega3">Omega-3</string>
+    <string name="supp_cat_vitamin">Vitamin</string>
+    <string name="supp_cat_mineral">Mineral</string>
+    <string name="supp_cat_medication">Medication</string>
+    <string name="supp_cat_other">Other</string>
+    <string name="supp_trig_fixed">At time</string>
+    <string name="supp_trig_meal">With meal</string>
+    <string name="supp_trig_before_gym">Pre-workout</string>
+    <string name="supp_trig_after_gym">Post-workout</string>
+    <string name="supp_trig_bedtime">Bedtime</string>
 </resources>

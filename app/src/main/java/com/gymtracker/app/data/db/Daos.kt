@@ -427,3 +427,95 @@ interface ImportRunDao {
     @Insert
     suspend fun insert(run: ImportRunEntity): Long
 }
+
+data class SupplementWithSchedules(
+    @Embedded val item: SupplementItemEntity,
+    @Relation(parentColumn = "id", entityColumn = "supplementId")
+    val schedules: List<SupplementScheduleEntity>
+)
+
+@Dao
+interface SupplementDao {
+    @Transaction
+    @Query("SELECT * FROM supplement_items WHERE deletedAt IS NULL ORDER BY id ASC")
+    fun observeActiveWithSchedules(): Flow<List<SupplementWithSchedules>>
+
+    @Transaction
+    @Query("SELECT * FROM supplement_items WHERE deletedAt IS NULL ORDER BY id ASC")
+    suspend fun getActiveWithSchedulesOnce(): List<SupplementWithSchedules>
+
+    @Query("SELECT * FROM supplement_items ORDER BY id ASC")
+    suspend fun getAllItemsOnce(): List<SupplementItemEntity>
+
+    @Query("SELECT * FROM supplement_items WHERE id = :id LIMIT 1")
+    suspend fun getItemById(id: Long): SupplementItemEntity?
+
+    @Query("SELECT * FROM supplement_items WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun findItemByRemoteId(remoteId: String): SupplementItemEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertItem(item: SupplementItemEntity): Long
+
+    @Query("SELECT * FROM supplement_schedules ORDER BY id ASC")
+    suspend fun getAllSchedulesOnce(): List<SupplementScheduleEntity>
+
+    @Query("SELECT * FROM supplement_schedules WHERE supplementId = :supplementId AND deletedAt IS NULL")
+    suspend fun getSchedulesForItem(supplementId: Long): List<SupplementScheduleEntity>
+
+    @Query("SELECT * FROM supplement_schedules WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun findScheduleByRemoteId(remoteId: String): SupplementScheduleEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSchedule(schedule: SupplementScheduleEntity): Long
+
+    @Query("UPDATE supplement_schedules SET deletedAt = :now, updatedAt = :now, syncState = 'PENDING_UPLOAD' WHERE supplementId = :supplementId AND deletedAt IS NULL")
+    suspend fun softDeleteSchedulesForItem(supplementId: Long, now: Instant)
+
+    @Query("SELECT * FROM supplement_logs WHERE deletedAt IS NULL AND takenAt >= :since ORDER BY takenAt DESC")
+    fun observeLogsSince(since: Instant): Flow<List<SupplementLogEntity>>
+
+    @Query("SELECT * FROM supplement_logs ORDER BY takenAt DESC")
+    suspend fun getAllLogsOnce(): List<SupplementLogEntity>
+
+    @Query("SELECT * FROM supplement_logs WHERE id = :id LIMIT 1")
+    suspend fun getLogById(id: Long): SupplementLogEntity?
+
+    @Query("SELECT * FROM supplement_logs WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun findLogByRemoteId(remoteId: String): SupplementLogEntity?
+
+    @Query(
+        """
+        SELECT sl.* FROM supplement_logs sl
+        INNER JOIN supplement_items si ON si.id = sl.supplementId
+        WHERE sl.deletedAt IS NULL AND si.deletedAt IS NULL
+          AND si.category = 'PRE_WORKOUT' AND sl.takenAt >= :since
+        ORDER BY sl.takenAt DESC LIMIT 1
+        """
+    )
+    fun observeRecentPreWorkoutLog(since: Instant): Flow<SupplementLogEntity?>
+
+    @Query(
+        """
+        SELECT sl.* FROM supplement_logs sl
+        INNER JOIN supplement_items si ON si.id = sl.supplementId
+        WHERE sl.deletedAt IS NULL AND si.deletedAt IS NULL
+          AND si.category = 'PRE_WORKOUT' AND sl.takenAt >= :since
+        ORDER BY sl.takenAt DESC LIMIT 1
+        """
+    )
+    suspend fun findRecentPreWorkoutLog(since: Instant): SupplementLogEntity?
+
+    @Query(
+        """
+        SELECT sl.* FROM supplement_logs sl
+        INNER JOIN supplement_items si ON si.id = sl.supplementId
+        WHERE sl.deletedAt IS NULL AND si.category = 'PRE_WORKOUT'
+          AND sl.linkedWorkoutId = :workoutId
+        ORDER BY sl.takenAt DESC
+        """
+    )
+    suspend fun findPreWorkoutLogsForWorkout(workoutId: Long): List<SupplementLogEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertLog(log: SupplementLogEntity): Long
+}

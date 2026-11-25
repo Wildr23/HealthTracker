@@ -41,4 +41,5 @@ abstract class GymTrackerDatabase : RoomDatabase() {
     abstract fun metricsDao(): MetricsDao
     abstract fun bodyWeightDao(): BodyWeightDao
     abstract fun importRunDao(): ImportRunDao
+    abstract fun supplementDao(): SupplementDao
 }

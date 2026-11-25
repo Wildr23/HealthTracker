@@ -196,6 +196,37 @@ fun WorkoutSummaryScreen(
                         }
                     }
 
+                    if (state.pendingPostWorkoutSupplements.isNotEmpty()) {
+                        ObsidianCard(
+                            containerColor = CardElevated,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.summary_post_workout_stack_title),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = EmeraldRest
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    state.pendingPostWorkoutSupplements.forEach { supp ->
+                                        val label = if (isUk) supp.nameUk else supp.nameEn
+                                        AssistChip(
+                                            onClick = { viewModel.logPostWorkoutSupplement(supp.id) },
+                                            label = { Text("+ $label", maxLines = 1) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (m != null) {
                         Text(
                             text = "${(m.durationSec / 60).coerceAtLeast(1)} ${stringResource(R.string.unit_min)}",

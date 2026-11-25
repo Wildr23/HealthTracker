@@ -286,6 +286,25 @@ create table if not exists public.supplement_items (
 create index if not exists idx_supplement_items_user_id
   on public.supplement_items (user_id);
 
+create table if not exists public.supplement_schedules (
+  remote_id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  supplement_remote_id uuid not null references public.supplement_items(remote_id) on delete cascade,
+  trigger_type text not null,
+  time_of_day text,
+  offset_minutes int,
+  days_of_week_mask int not null default 127,
+  enabled boolean not null default true,
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists idx_supplement_schedules_user_id
+  on public.supplement_schedules (user_id);
+
+create index if not exists idx_supplement_schedules_supp_id
+  on public.supplement_schedules (supplement_remote_id);
+
 create table if not exists public.supplement_logs (
   remote_id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -424,7 +443,7 @@ begin
     'exercises','routines','routine_days','routine_day_exercises',
     'workouts','workout_exercises','workout_sets','workout_hr_streams',
     'body_weights','scale_readings','watch_activities','user_preferences_sync',
-    'supplement_items','supplement_logs','lab_reports','lab_markers',
+    'supplement_items','supplement_schedules','supplement_logs','lab_reports','lab_markers',
     'daily_vitals','health_events','body_pain_logs','periodic_reports'
   ]
   loop

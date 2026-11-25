@@ -102,7 +102,7 @@ class WorkoutTimerService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_stat_health_tracker)
             .setContentTitle(workoutTitle.ifBlank { getString(R.string.active_workout_title) })
             .setContentText(content)
             .setContentIntent(pi)

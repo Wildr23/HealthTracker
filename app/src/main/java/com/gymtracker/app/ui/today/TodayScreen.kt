@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Medication
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.UploadFile
@@ -51,6 +52,7 @@ import androidx.health.connect.client.PermissionController
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gymtracker.app.R
+import com.gymtracker.app.domain.CaffeineSleepStatus
 import com.gymtracker.app.ui.common.formatDurationMinSec
 import com.gymtracker.app.ui.common.formatInstantShort
 import com.gymtracker.app.ui.common.labelRes
@@ -76,6 +78,7 @@ fun TodayScreen(
     onOpenJefitImport: () -> Unit,
     onOpenMuscleRecovery: () -> Unit = {},
     onOpenWatchActivity: () -> Unit = {},
+    onOpenStack: () -> Unit = {},
     viewModel: TodayViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -220,7 +223,14 @@ fun TodayScreen(
                                         tint = if (state.tookPreWorkout) GoldPr else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
-                                label = { Text(stringResource(R.string.today_preworkout_toggle), maxLines = 1) }
+                                label = {
+                                    val preLabel = if (state.tookPreWorkout && state.recentPreWorkoutMinAgo != null) {
+                                        stringResource(R.string.today_preworkout_logged_ago, state.recentPreWorkoutMinAgo!!)
+                                    } else {
+                                        stringResource(R.string.today_preworkout_toggle)
+                                    }
+                                    Text(preLabel, maxLines = 1)
+                                }
                             )
                         }
 
@@ -357,6 +367,58 @@ fun TodayScreen(
                         MetricTile(
                             label = stringResource(R.string.today_rhr),
                             value = sum?.latestRestingHr?.let { "$it ${stringResource(R.string.unit_bpm)}" } ?: "—"
+                        )
+                    }
+                }
+            }
+        }
+
+        // Stack Summary Mini-Card
+        if (state.stackTotalToday > 0 || state.caffeineTotalTodayMg > 0) {
+            item {
+                val cafColor = when (state.caffeineSleepStatus) {
+                    CaffeineSleepStatus.SAFE -> EmeraldRest
+                    CaffeineSleepStatus.MODERATE -> GoldPr
+                    CaffeineSleepStatus.HIGH -> CoralEnergy
+                }
+                val bedH = state.bedtimeMinutesOfDay / 60
+                val bedM = state.bedtimeMinutesOfDay % 60
+                val bedLabel = if (bedH == 0 && bedM == 0) "24:00" else String.format("%02d:%02d", bedH, bedM)
+
+                ObsidianCard(
+                    onClick = onOpenStack,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Default.Medication, contentDescription = null, tint = ElectricBlue)
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = stringResource(
+                                    R.string.today_stack_summary,
+                                    state.stackTakenToday,
+                                    state.stackTotalToday
+                                ),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.today_stack_caffeine_bed,
+                                    bedLabel,
+                                    state.caffeineBedtimeMg
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = cafColor
+                            )
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

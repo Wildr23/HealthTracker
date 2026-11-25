@@ -66,7 +66,7 @@ class XiaomiScaleCaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ensureBurstChannel()
         val notif = NotificationCompat.Builder(this, BURST_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_stat_health_tracker)
             .setContentTitle(getString(R.string.scale_title))
             .setContentText(getString(R.string.scale_burst_notif_text))
             .setOngoing(true)

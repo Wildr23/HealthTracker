@@ -18,6 +18,12 @@ import com.gymtracker.app.data.db.RoutineDayEntity
 import com.gymtracker.app.data.db.RoutineDayExerciseEntity
 import com.gymtracker.app.data.db.RoutineEntity
 import com.gymtracker.app.data.db.SetType
+import com.gymtracker.app.data.db.SupplementCategory
+import com.gymtracker.app.data.db.SupplementItemEntity
+import com.gymtracker.app.data.db.SupplementLogEntity
+import com.gymtracker.app.data.db.SupplementScheduleEntity
+import com.gymtracker.app.data.db.SupplementTrigger
+import com.gymtracker.app.data.db.SupplementUnit
 import com.gymtracker.app.data.db.SyncState
 import com.gymtracker.app.data.db.WorkoutEntity
 import com.gymtracker.app.data.db.WorkoutExerciseEntity
@@ -28,6 +34,7 @@ import com.gymtracker.app.data.prefs.UserPreferencesRepository
 import com.gymtracker.app.data.repo.WorkoutMetricsRecomputer
 import com.gymtracker.app.data.scale.ScaleReadingSnapshot
 import com.gymtracker.app.data.scale.ScaleReadingsRepository
+import com.gymtracker.app.work.StackReminderScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -51,6 +58,7 @@ import kotlinx.serialization.json.put
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.util.UUID
 import javax.inject.Inject
@@ -78,7 +86,8 @@ class CloudSyncManager @Inject constructor(
     private val watchActivityRepository: WatchActivityRepository,
     private val http: SupabaseHttpClient,
     private val metricsRecomputer: WorkoutMetricsRecomputer,
-    private val seeder: ExerciseCatalogSeeder
+    private val seeder: ExerciseCatalogSeeder,
+    private val stackReminderScheduler: StackReminderScheduler
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -434,6 +443,69 @@ class CloudSyncManager @Inject constructor(
         }
         uploadBatched(auth, "user_preferences_sync", "user_id", listOf(prefRow))
 
+        // 8. Stack Supplements, Schedules & Logs
+        val suppDao = database.supplementDao()
+        val suppItems = suppDao.getAllItemsOnce()
+        val suppItemRemoteById = suppItems.associate { it.id to it.remoteId }
+        val workoutRemoteByIdMap = workouts.associate { it.id to it.remoteId }
+
+        uploadBatched(auth, "supplement_items", "remote_id", suppItems.map { si ->
+            buildJsonObject {
+                put("remote_id", si.remoteId)
+                put("user_id", auth.userId)
+                put("name_en", si.nameEn)
+                put("name_uk", si.nameUk)
+                put("category", si.category.name)
+                put("default_dose", si.defaultDose)
+                put("unit", si.unit.name)
+                putNullableInt("caffeine_mg_per_serving", si.caffeineMgPerServing)
+                putNullableDouble("servings_remaining", si.servingsRemaining)
+                putNullableDouble("low_stock_threshold", si.lowStockThreshold)
+                putNullableInt("cycle_days_on", si.cycleDaysOn)
+                putNullableInt("cycle_days_off", si.cycleDaysOff)
+                putNullableString("cycle_start_date", si.cycleStartDate?.toString())
+                putNullableString("notes", si.notes)
+                put("updated_at", si.updatedAt.toString())
+                putNullableString("deleted_at", si.deletedAt?.toString())
+            }
+        })
+
+        val suppSchedules = suppDao.getAllSchedulesOnce()
+        runCatching {
+            uploadBatched(auth, "supplement_schedules", "remote_id", suppSchedules.mapNotNull { sc ->
+                val suppRid = suppItemRemoteById[sc.supplementId] ?: return@mapNotNull null
+                buildJsonObject {
+                    put("remote_id", sc.remoteId)
+                    put("user_id", auth.userId)
+                    put("supplement_remote_id", suppRid)
+                    put("trigger_type", sc.triggerType.name)
+                    putNullableString("time_of_day", sc.timeOfDay?.toString())
+                    putNullableInt("offset_minutes", sc.offsetMinutes)
+                    put("days_of_week_mask", sc.daysOfWeekMask)
+                    put("enabled", sc.enabled)
+                    put("updated_at", sc.updatedAt.toString())
+                    putNullableString("deleted_at", sc.deletedAt?.toString())
+                }
+            })
+        }
+
+        val suppLogs = suppDao.getAllLogsOnce()
+        uploadBatched(auth, "supplement_logs", "remote_id", suppLogs.mapNotNull { sl ->
+            val suppRid = suppItemRemoteById[sl.supplementId] ?: return@mapNotNull null
+            val workoutRid = sl.linkedWorkoutId?.let { workoutRemoteByIdMap[it] }
+            buildJsonObject {
+                put("remote_id", sl.remoteId)
+                put("user_id", auth.userId)
+                put("supplement_remote_id", suppRid)
+                put("taken_at", sl.takenAt.toString())
+                put("dose", sl.dose)
+                putNullableInt("caffeine_mg", sl.caffeineMg)
+                putNullableString("linked_workout_remote_id", workoutRid)
+                put("updated_at", sl.updatedAt.toString())
+                putNullableString("deleted_at", sl.deletedAt?.toString())
+            }
+        })
+
         prefsRepo.setSupabaseLastSync(Instant.now().epochSecond)
         CloudSyncSummary(
             workoutsUploaded = workouts.size,
@@ -458,6 +530,15 @@ class CloudSyncManager @Inject constructor(
         val remoteBw = http.selectAllRows(auth.url, auth.key, auth.accessToken, "body_weights")
         val remoteScale = http.selectAllRows(auth.url, auth.key, auth.accessToken, "scale_readings")
         val remotePrefs = http.selectAllRows(auth.url, auth.key, auth.accessToken, "user_preferences_sync")
+        val remoteSuppItems = runCatching {
+            http.selectAllRows(auth.url, auth.key, auth.accessToken, "supplement_items")
+        }.getOrDefault(emptyList())
+        val remoteSuppScheds = runCatching {
+            http.selectAllRows(auth.url, auth.key, auth.accessToken, "supplement_schedules")
+        }.getOrDefault(emptyList())
+        val remoteSuppLogs = runCatching {
+            http.selectAllRows(auth.url, auth.key, auth.accessToken, "supplement_logs")
+        }.getOrDefault(emptyList())
 
         val restoredWorkoutIds = mutableListOf<Long>()
         var exCount = 0
@@ -746,6 +827,89 @@ class CloudSyncManager @Inject constructor(
                 )
                 bwCount++
             }
+
+            // Restore Stack Supplements, Schedules & Logs
+            val suppDao = database.supplementDao()
+            val suppLocalIdByRemoteId = mutableMapOf<String, Long>()
+            for (row in remoteSuppItems) {
+                val rId = row.str("remote_id") ?: continue
+                val existing = suppDao.findItemByRemoteId(rId)
+                val localId = suppDao.upsertItem(
+                    SupplementItemEntity(
+                        id = existing?.id ?: 0L,
+                        nameEn = row.str("name_en") ?: "Supplement",
+                        nameUk = row.str("name_uk") ?: (row.str("name_en") ?: "Добавка"),
+                        category = row.enum("category", SupplementCategory.OTHER),
+                        defaultDose = row.double("default_dose") ?: 1.0,
+                        unit = row.enum("unit", SupplementUnit.CAPSULE),
+                        caffeineMgPerServing = row.int("caffeine_mg_per_serving"),
+                        servingsRemaining = row.double("servings_remaining"),
+                        lowStockThreshold = row.double("low_stock_threshold"),
+                        cycleDaysOn = row.int("cycle_days_on"),
+                        cycleDaysOff = row.int("cycle_days_off"),
+                        cycleStartDate = row.str("cycle_start_date")?.let { raw ->
+                            runCatching { LocalDate.parse(raw) }.getOrNull()
+                        },
+                        notes = row.str("notes"),
+                        remoteId = rId,
+                        updatedAt = row.instant("updated_at") ?: Instant.now(),
+                        deletedAt = row.instant("deleted_at"),
+                        syncState = SyncState.SYNCED
+                    )
+                )
+                suppLocalIdByRemoteId[rId] = localId
+            }
+
+            for (row in remoteSuppScheds) {
+                val rId = row.str("remote_id") ?: continue
+                val suppRid = row.str("supplement_remote_id") ?: continue
+                val suppLocalId = suppLocalIdByRemoteId[suppRid]
+                    ?: suppDao.findItemByRemoteId(suppRid)?.id ?: continue
+                val existing = suppDao.findScheduleByRemoteId(rId)
+                suppDao.upsertSchedule(
+                    SupplementScheduleEntity(
+                        id = existing?.id ?: 0L,
+                        supplementId = suppLocalId,
+                        triggerType = row.enum("trigger_type", SupplementTrigger.FIXED_TIME),
+                        timeOfDay = row.str("time_of_day")?.let { raw ->
+                            runCatching { LocalTime.parse(raw) }.getOrNull()
+                        },
+                        offsetMinutes = row.int("offset_minutes"),
+                        daysOfWeekMask = row.int("days_of_week_mask") ?: 0b1111111,
+                        enabled = row.bool("enabled") ?: true,
+                        remoteId = rId,
+                        updatedAt = row.instant("updated_at") ?: Instant.now(),
+                        deletedAt = row.instant("deleted_at"),
+                        syncState = SyncState.SYNCED
+                    )
+                )
+            }
+
+            for (row in remoteSuppLogs) {
+                val rId = row.str("remote_id") ?: continue
+                val suppRid = row.str("supplement_remote_id") ?: continue
+                val suppLocalId = suppLocalIdByRemoteId[suppRid]
+                    ?: suppDao.findItemByRemoteId(suppRid)?.id ?: continue
+                val takenAt = row.instant("taken_at") ?: continue
+                val linkedWId = row.str("linked_workout_remote_id")?.let { wRid ->
+                    workoutIdByRemoteId[wRid] ?: workoutDao.findWorkoutByRemoteId(wRid)?.id
+                }
+                val existing = suppDao.findLogByRemoteId(rId)
+                suppDao.upsertLog(
+                    SupplementLogEntity(
+                        id = existing?.id ?: 0L,
+                        supplementId = suppLocalId,
+                        takenAt = takenAt,
+                        dose = row.double("dose") ?: 1.0,
+                        caffeineMg = row.int("caffeine_mg"),
+                        linkedWorkoutId = linkedWId,
+                        remoteId = rId,
+                        updatedAt = row.instant("updated_at") ?: Instant.now(),
+                        deletedAt = row.instant("deleted_at"),
+                        syncState = SyncState.SYNCED
+                    )
+                )
+            }
         }
 
         for (row in remoteScale) {
@@ -810,6 +974,7 @@ class CloudSyncManager @Inject constructor(
             metricsRecomputer.recompute(wId)
         }
 
+        stackReminderScheduler.rescheduleAll()
         prefsRepo.setSupabaseLastSync(Instant.now().epochSecond)
         CloudRestoreSummary(
             exercisesRestored = exCount,
