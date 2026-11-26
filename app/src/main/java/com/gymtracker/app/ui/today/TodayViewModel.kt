@@ -121,16 +121,24 @@ class TodayViewModel @Inject constructor(
         )
 
         val (allActiveStack, recentLogs, recentPreLog) = extra.stackTriple
-        val visibleToday = allActiveStack.filter {
-            it.item.notes != SupplementRepository.QUICK_CAFFEINE_TAG &&
-                SupplementScheduleEngine.isCycleActiveOnDate(it.item, today) &&
-                SupplementScheduleEngine.isScheduledForDate(it.schedules, today)
-        }
-        val takenIdsToday = recentLogs
-            .filter { !it.takenAt.isBefore(todayStart) }
-            .map { it.supplementId }
-            .toSet()
-        val stackTaken = visibleToday.count { it.item.id in takenIdsToday }
+        val todayLogs = recentLogs.filter { it.deletedAt == null && !it.takenAt.isBefore(todayStart) }
+        val activeTodayDoses = allActiveStack
+            .filter {
+                it.item.notes != SupplementRepository.QUICK_CAFFEINE_TAG &&
+                    SupplementScheduleEngine.isCycleActiveOnDate(it.item, today)
+            }
+            .flatMap { sw ->
+                SupplementScheduleEngine.matchTodayDoses(
+                    sw = sw,
+                    todayLogs = todayLogs,
+                    logScheduleMap = extra.prefs.stackLogScheduleMap,
+                    today = today,
+                    bedtimeMinutesOfDay = extra.prefs.bedtimeMinutesOfDay,
+                    zoneId = zone
+                )
+            }
+        val stackTaken = activeTodayDoses.count { it.matchedLog != null }
+        val stackTotal = activeTodayDoses.size
 
         val itemsById = allActiveStack.associateBy { it.item.id }
         val caffeineDoses = recentLogs.mapNotNull { log ->
@@ -165,7 +173,7 @@ class TodayViewModel @Inject constructor(
             tookPreWorkout = effectivePre,
             recentPreWorkoutMinAgo = preMinAgo,
             stackTakenToday = stackTaken,
-            stackTotalToday = visibleToday.size,
+            stackTotalToday = stackTotal,
             caffeineBedtimeMg = cafAnalysis.projectedMgAtBedtime.roundToInt(),
             caffeineTotalTodayMg = cafAnalysis.totalTodayMg,
             caffeineSleepStatus = cafAnalysis.status,

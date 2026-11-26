@@ -35,13 +35,18 @@ import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
 
+data class PendingPostWorkoutDose(
+    val item: SupplementItemEntity,
+    val scheduleId: Long?
+)
+
 data class SummaryUiState(
     val workoutFull: WorkoutFull? = null,
     val hrSamples: List<HrSampleEntity> = emptyList(),
     val setMetricsById: Map<Long, SetMetricsEntity> = emptyMap(),
     val inferredSupersetsByExId: Map<Long, Int> = emptyMap(),
     val muscleAnalysis: WorkoutMuscleAnalysis? = null,
-    val pendingPostWorkoutSupplements: List<SupplementItemEntity> = emptyList(),
+    val pendingPostWorkoutSupplements: List<PendingPostWorkoutDose> = emptyList(),
     val hrMax: Int = 185,
     val isSyncingHc: Boolean = false,
     val candidateSessions: List<HcSession>? = null
@@ -90,17 +95,28 @@ class WorkoutSummaryViewModel @Inject constructor(
         }
 
         val now = Instant.now()
-        val today = LocalDate.now(ZoneId.systemDefault())
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
         val isRecentWorkout = wf?.workout?.endedAt?.let { ended ->
             Duration.between(ended, now).toHours() in 0..12
         } ?: false
-        val takenTodayIds = extra.todayLogs.map { it.supplementId }.toSet()
         val pendingPost = if (isRecentWorkout) {
-            extra.visibleStack.filter { sw ->
-                sw.item.id !in takenTodayIds &&
-                    SupplementScheduleEngine.isCycleActiveOnDate(sw.item, today) &&
-                    sw.schedules.any { it.enabled && it.deletedAt == null && it.triggerType == SupplementTrigger.AFTER_WORKOUT }
-            }.map { it.item }
+            extra.visibleStack.flatMap { sw ->
+                if (!SupplementScheduleEngine.isCycleActiveOnDate(sw.item, today)) return@flatMap emptyList()
+                val doses = SupplementScheduleEngine.matchTodayDoses(
+                    sw = sw,
+                    todayLogs = extra.todayLogs,
+                    logScheduleMap = extra.prefs.stackLogScheduleMap,
+                    today = today,
+                    bedtimeMinutesOfDay = extra.prefs.bedtimeMinutesOfDay,
+                    zoneId = zone
+                )
+                doses.mapNotNull { dose ->
+                    if (dose.matchedLog == null && dose.schedule?.triggerType == SupplementTrigger.AFTER_WORKOUT) {
+                        PendingPostWorkoutDose(item = sw.item, scheduleId = dose.schedule.id)
+                    } else null
+                }
+            }
         } else emptyList()
 
         SummaryUiState(
@@ -183,9 +199,13 @@ class WorkoutSummaryViewModel @Inject constructor(
         }
     }
 
-    fun logPostWorkoutSupplement(itemId: Long) {
+    fun logPostWorkoutSupplement(itemId: Long, scheduleId: Long? = null) {
         viewModelScope.launch {
-            supplementRepository.logIntake(itemId = itemId, linkedWorkoutId = workoutId)
+            supplementRepository.logIntake(
+                itemId = itemId,
+                linkedWorkoutId = workoutId,
+                scheduleId = scheduleId
+            )
         }
     }
 }

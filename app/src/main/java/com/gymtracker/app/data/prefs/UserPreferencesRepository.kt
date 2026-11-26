@@ -74,7 +74,8 @@ data class UserPreferences(
     val supabaseLastSyncEpochSec: Long = 0L,
     val supabaseAutoSyncEnabled: Boolean = true,
     val exerciseGoalsKg: Map<Long, Double> = emptyMap(),
-    val injuredMuscles: Map<String, String> = emptyMap()
+    val injuredMuscles: Map<String, String> = emptyMap(),
+    val stackLogScheduleMap: Map<Long, Long> = emptyMap()
 )
 
 @Singleton
@@ -120,6 +121,7 @@ class UserPreferencesRepository @Inject constructor(
         val SUPABASE_AUTO_SYNC = booleanPreferencesKey("supabase_auto_sync")
         val EXERCISE_GOALS_JSON = stringPreferencesKey("exercise_goals_json")
         val INJURED_MUSCLES_JSON = stringPreferencesKey("injured_muscles_json")
+        val STACK_LOG_SCHEDULE_MAP_JSON = stringPreferencesKey("stack_log_schedule_map_json")
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
@@ -130,6 +132,10 @@ class UserPreferencesRepository @Inject constructor(
         val injuredMap = prefs[Keys.INJURED_MUSCLES_JSON]?.let { raw ->
             runCatching { Json.decodeFromString<Map<String, String>>(raw) }.getOrNull()
         } ?: emptyMap()
+
+        val logScheduleMap = prefs[Keys.STACK_LOG_SCHEDULE_MAP_JSON]?.let { raw ->
+            runCatching { Json.decodeFromString<Map<String, Long>>(raw) }.getOrNull()
+        }?.mapNotNull { (k, v) -> k.toLongOrNull()?.let { it to v } }?.toMap() ?: emptyMap()
 
         UserPreferences(
             language = prefs[Keys.LANGUAGE]?.let { runCatching { AppLanguage.valueOf(it) }.getOrNull() }
@@ -173,7 +179,8 @@ class UserPreferencesRepository @Inject constructor(
             supabaseLastSyncEpochSec = prefs[Keys.SUPABASE_LAST_SYNC_SEC] ?: 0L,
             supabaseAutoSyncEnabled = prefs[Keys.SUPABASE_AUTO_SYNC] ?: true,
             exerciseGoalsKg = goalsMap,
-            injuredMuscles = injuredMap
+            injuredMuscles = injuredMap,
+            stackLogScheduleMap = logScheduleMap
         )
     }
 
@@ -409,6 +416,49 @@ class UserPreferencesRepository @Inject constructor(
                 current[groupKey] = dateIso
             }
             prefs[Keys.INJURED_MUSCLES_JSON] = Json.encodeToString(current)
+        }
+    }
+
+    suspend fun getLogScheduleMapOnce(): Map<Long, Long> = getOnce().stackLogScheduleMap
+
+    suspend fun recordLogScheduleMapping(logId: Long, scheduleId: Long) {
+        recordLogScheduleMappings(listOf(logId to scheduleId))
+    }
+
+    suspend fun recordLogScheduleMappings(pairs: List<Pair<Long, Long>>) {
+        if (pairs.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val current = prefs[Keys.STACK_LOG_SCHEDULE_MAP_JSON]?.let { raw ->
+                runCatching { Json.decodeFromString<Map<String, Long>>(raw) }.getOrNull()
+            }?.toMutableMap() ?: mutableMapOf()
+            for ((logId, schedId) in pairs) {
+                current[logId.toString()] = schedId
+            }
+            val trimmed = if (current.size > 200) {
+                current.entries
+                    .sortedByDescending { it.key.toLongOrNull() ?: 0L }
+                    .take(200)
+                    .associate { it.key to it.value }
+            } else {
+                current
+            }
+            prefs[Keys.STACK_LOG_SCHEDULE_MAP_JSON] = Json.encodeToString(trimmed)
+        }
+    }
+
+    suspend fun removeLogScheduleMappings(logIds: Collection<Long>) {
+        if (logIds.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val current = prefs[Keys.STACK_LOG_SCHEDULE_MAP_JSON]?.let { raw ->
+                runCatching { Json.decodeFromString<Map<String, Long>>(raw) }.getOrNull()
+            }?.toMutableMap() ?: return@edit
+            var changed = false
+            for (logId in logIds) {
+                if (current.remove(logId.toString()) != null) changed = true
+            }
+            if (changed) {
+                prefs[Keys.STACK_LOG_SCHEDULE_MAP_JSON] = Json.encodeToString(current)
+            }
         }
     }
 }

@@ -18,6 +18,7 @@ import com.gymtracker.app.domain.StackTimeSlot
 import com.gymtracker.app.domain.SupplementInteractionEngine
 import com.gymtracker.app.domain.SupplementRecommendation
 import com.gymtracker.app.domain.SupplementScheduleEngine
+import com.gymtracker.app.work.NextReminderInfo
 import com.gymtracker.app.work.StackReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -33,14 +34,38 @@ import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
 
-data class StackChecklistItemUi(
+data class StackDoseItemUi(
+    val item: SupplementItemEntity,
     val withSchedules: SupplementWithSchedules,
+    val schedule: SupplementScheduleEntity?,
     val slot: StackTimeSlot,
+    val takenTodayLogId: Long?,
+    val takenAt: Instant?,
+    val liveWarning: StackInteraction?,
     val cyclePhase: CyclePhase,
     val recommendation: SupplementRecommendation,
-    val takenTodayLogId: Long?,
+    val isLowStock: Boolean,
+    val daysRemaining: Int?
+)
+
+data class StackSlotGroupUi(
+    val slot: StackTimeSlot,
+    val doses: List<StackDoseItemUi>,
+    val takenCount: Int,
+    val totalCount: Int
+) {
+    val isComplete: Boolean get() = totalCount > 0 && takenCount >= totalCount
+    val pendingCount: Int get() = (totalCount - takenCount).coerceAtLeast(0)
+}
+
+data class StackShelfItemUi(
+    val withSchedules: SupplementWithSchedules,
+    val cyclePhase: CyclePhase,
+    val recommendation: SupplementRecommendation,
     val daysRemaining: Int?,
     val isLowStock: Boolean,
+    val takenTodayCount: Int,
+    val dueTodayCount: Int,
     val liveWarning: StackInteraction?
 )
 
@@ -50,11 +75,13 @@ data class StackLogEntryUi(
 )
 
 data class StackUiState(
-    val dueTodayItems: List<StackChecklistItemUi> = emptyList(),
-    val inventoryItems: List<StackChecklistItemUi> = emptyList(),
-    val lowStockItems: List<StackChecklistItemUi> = emptyList(),
+    val slotGroups: List<StackSlotGroupUi> = emptyList(),
+    val shelfItems: List<StackShelfItemUi> = emptyList(),
+    val lowStockItems: List<StackShelfItemUi> = emptyList(),
     val recentLogs: List<StackLogEntryUi> = emptyList(),
+    val todayCaffeineLogs: List<StackLogEntryUi> = emptyList(),
     val interactions: List<StackInteraction> = emptyList(),
+    val activeConflictCount: Int = 0,
     val caffeineAnalysis: CaffeineAnalysis? = null,
     val takenTodayCount: Int = 0,
     val totalDueTodayCount: Int = 0,
@@ -62,12 +89,19 @@ data class StackUiState(
     val adherence14dPercent: Int = 0,
     val bedtimeMinutesOfDay: Int = 0,
     val remindersEnabled: Boolean = true,
+    val nextReminder: NextReminderInfo? = null,
     val isStackEmpty: Boolean = true
 )
 
 sealed interface StackSnackbarEvent {
-    data class LoggedWithUndo(val logId: Long, val itemNameEn: String, val itemNameUk: String) : StackSnackbarEvent
+    data class LoggedWithUndo(
+        val logIds: List<Long>,
+        val itemNameEn: String,
+        val itemNameUk: String,
+        val isBatch: Boolean = false
+    ) : StackSnackbarEvent
     data object Restocked : StackSnackbarEvent
+    data object TestReminderScheduled : StackSnackbarEvent
 }
 
 @HiltViewModel
@@ -78,6 +112,7 @@ class StackViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val clockTick = MutableStateFlow(0L)
+    private val nextReminderFlow = MutableStateFlow<NextReminderInfo?>(null)
     private val _events = MutableSharedFlow<StackSnackbarEvent>(extraBufferCapacity = 4)
     val events = _events.asSharedFlow()
 
@@ -87,8 +122,9 @@ class StackViewModel @Inject constructor(
             LocalDate.now().minusDays(14).atStartOfDay(ZoneId.systemDefault()).toInstant()
         ),
         prefsRepo.preferences,
+        nextReminderFlow,
         clockTick
-    ) { allActive, logs14d, prefs, _ ->
+    ) { allActive, logs14d, prefs, nextRem, _ ->
         val zone = ZoneId.systemDefault()
         val now = Instant.now()
         val today = LocalDate.now(zone)
@@ -98,10 +134,6 @@ class StackViewModel @Inject constructor(
         val itemsById = allActive.associateBy { it.item.id }
 
         val todayLogs = logs14d.filter { it.deletedAt == null && !it.takenAt.isBefore(todayStart) }
-        val latestTodayLogByItemId = mutableMapOf<Long, SupplementLogEntity>()
-        for (l in todayLogs.sortedBy { it.takenAt }) {
-            latestTodayLogByItemId[l.supplementId] = l
-        }
 
         val interactions = SupplementInteractionEngine.analyzeStack(
             items = visibleStack,
@@ -116,29 +148,77 @@ class StackViewModel @Inject constructor(
             .flatMap { inter -> inter.involvedItemIds.map { id -> id to inter } }
             .groupBy({ it.first }, { it.second })
 
-        val allUi = visibleStack.map { sw ->
+        val allDoses = mutableListOf<StackDoseItemUi>()
+        val shelfItems = mutableListOf<StackShelfItemUi>()
+
+        for (sw in visibleStack) {
             val rem = sw.item.servingsRemaining
             val thresh = sw.item.lowStockThreshold ?: 5.0
             val lowStock = rem != null && rem <= thresh
             val liveWarn = conflictWarningsByItemId[sw.item.id]?.firstOrNull()
-            StackChecklistItemUi(
+            val cyclePhase = SupplementScheduleEngine.computeCycleStatus(sw.item, today)
+            val rec = SupplementInteractionEngine.recommendationFor(sw.item)
+            val daysRem = SupplementScheduleEngine.estimateDaysRemaining(sw.item, sw.schedules)
+
+            val matched = if (cyclePhase !is CyclePhase.Off) {
+                SupplementScheduleEngine.matchTodayDoses(
+                    sw = sw,
+                    todayLogs = todayLogs,
+                    logScheduleMap = prefs.stackLogScheduleMap,
+                    today = today,
+                    bedtimeMinutesOfDay = prefs.bedtimeMinutesOfDay,
+                    zoneId = zone
+                )
+            } else emptyList()
+
+            shelfItems += StackShelfItemUi(
                 withSchedules = sw,
-                slot = SupplementScheduleEngine.slotFor(sw.schedules, sw.item),
-                cyclePhase = SupplementScheduleEngine.computeCycleStatus(sw.item, today),
-                recommendation = SupplementInteractionEngine.recommendationFor(sw.item),
-                takenTodayLogId = latestTodayLogByItemId[sw.item.id]?.id,
-                daysRemaining = SupplementScheduleEngine.estimateDaysRemaining(sw.item, sw.schedules),
+                cyclePhase = cyclePhase,
+                recommendation = rec,
+                daysRemaining = daysRem,
                 isLowStock = lowStock,
+                takenTodayCount = matched.count { it.matchedLog != null },
+                dueTodayCount = matched.size,
                 liveWarning = liveWarn
+            )
+
+            for (dm in matched) {
+                allDoses += StackDoseItemUi(
+                    item = sw.item,
+                    withSchedules = sw,
+                    schedule = dm.schedule,
+                    slot = dm.slot,
+                    takenTodayLogId = dm.matchedLog?.id,
+                    takenAt = dm.matchedLog?.takenAt,
+                    liveWarning = liveWarn,
+                    cyclePhase = cyclePhase,
+                    recommendation = rec,
+                    isLowStock = lowStock,
+                    daysRemaining = daysRem
+                )
+            }
+        }
+
+        val slotOrder = listOf(
+            StackTimeSlot.MORNING,
+            StackTimeSlot.AFTERNOON,
+            StackTimeSlot.WORKOUT,
+            StackTimeSlot.EVENING,
+            StackTimeSlot.BEDTIME,
+            StackTimeSlot.ANYTIME
+        )
+        val slotGroups = slotOrder.mapNotNull { slot ->
+            val groupDoses = allDoses.filter { it.slot == slot }
+            if (groupDoses.isEmpty()) null
+            else StackSlotGroupUi(
+                slot = slot,
+                doses = groupDoses,
+                takenCount = groupDoses.count { it.takenTodayLogId != null },
+                totalCount = groupDoses.size
             )
         }
 
-        val dueToday = allUi.filter { ui ->
-            ui.cyclePhase !is CyclePhase.Off &&
-                SupplementScheduleEngine.isScheduledForDate(ui.withSchedules.schedules, today)
-        }
-
-        val lowStock = allUi.filter { it.isLowStock }
+        val lowStock = shelfItems.filter { it.isLowStock }
 
         val (streak, adherence) = SupplementScheduleEngine.computeStreakAndAdherence(
             items = visibleStack,
@@ -172,81 +252,166 @@ class StackViewModel @Inject constructor(
 
         val recentEntries = logs14d
             .filter { it.deletedAt == null }
-            .take(30)
+            .take(50)
+            .map { log -> StackLogEntryUi(log = log, item = itemsById[log.supplementId]?.item) }
+
+        val todayCafEntries = todayLogs
+            .filter { log ->
+                val item = itemsById[log.supplementId]?.item
+                val mg = log.caffeineMg ?: item?.caffeineMgPerServing ?: 0
+                mg > 0
+            }
+            .sortedBy { it.takenAt }
             .map { log -> StackLogEntryUi(log = log, item = itemsById[log.supplementId]?.item) }
 
         StackUiState(
-            dueTodayItems = dueToday,
-            inventoryItems = allUi,
+            slotGroups = slotGroups,
+            shelfItems = shelfItems,
             lowStockItems = lowStock,
             recentLogs = recentEntries,
+            todayCaffeineLogs = todayCafEntries,
             interactions = interactions,
+            activeConflictCount = interactions.count { it.kind == InteractionKind.CONFLICT },
             caffeineAnalysis = cafAnalysis,
-            takenTodayCount = dueToday.count { it.takenTodayLogId != null },
-            totalDueTodayCount = dueToday.size,
+            takenTodayCount = allDoses.count { it.takenTodayLogId != null },
+            totalDueTodayCount = allDoses.size,
             streakDays = streak,
             adherence14dPercent = adherence,
             bedtimeMinutesOfDay = prefs.bedtimeMinutesOfDay,
             remindersEnabled = prefs.stackRemindersEnabled,
+            nextReminder = nextRem,
             isStackEmpty = visibleStack.isEmpty()
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), StackUiState())
 
+    init {
+        refreshNow()
+    }
+
     fun refreshNow() {
-        clockTick.value++
+        viewModelScope.launch {
+            nextReminderFlow.value = runCatching { reminderScheduler.getNextScheduledReminder() }.getOrNull()
+            clockTick.value++
+        }
     }
 
     fun seedDefaultStack() {
         viewModelScope.launch {
             supplementRepository.seedDefaultUserStack()
-            clockTick.value++
+            refreshNow()
         }
     }
 
-    fun toggleTakenToday(itemUi: StackChecklistItemUi) {
+    fun toggleDose(doseUi: StackDoseItemUi) {
         viewModelScope.launch {
-            val existingLogId = itemUi.takenTodayLogId
+            val existingLogId = doseUi.takenTodayLogId
             if (existingLogId != null) {
                 supplementRepository.undoLog(existingLogId)
             } else {
-                val item = itemUi.withSchedules.item
-                val logId = supplementRepository.logIntake(item.id)
+                val logId = supplementRepository.logIntake(
+                    itemId = doseUi.item.id,
+                    scheduleId = doseUi.schedule?.id
+                )
                 if (logId > 0L) {
-                    _events.tryEmit(StackSnackbarEvent.LoggedWithUndo(logId, item.nameEn, item.nameUk))
+                    _events.tryEmit(
+                        StackSnackbarEvent.LoggedWithUndo(
+                            logIds = listOf(logId),
+                            itemNameEn = doseUi.item.nameEn,
+                            itemNameUk = doseUi.item.nameUk
+                        )
+                    )
                 }
             }
             clockTick.value++
         }
     }
 
-    fun logQuickCaffeine(mg: Int, labelEn: String, labelUk: String) {
+    fun logDoseAtTime(doseUi: StackDoseItemUi, takenAt: Instant) {
         viewModelScope.launch {
-            val logId = supplementRepository.logQuickCaffeine(mg, labelEn, labelUk)
+            val logId = supplementRepository.logIntake(
+                itemId = doseUi.item.id,
+                takenAt = takenAt,
+                scheduleId = doseUi.schedule?.id
+            )
             if (logId > 0L) {
-                _events.tryEmit(StackSnackbarEvent.LoggedWithUndo(logId, labelEn, labelUk))
+                _events.tryEmit(
+                    StackSnackbarEvent.LoggedWithUndo(
+                        logIds = listOf(logId),
+                        itemNameEn = doseUi.item.nameEn,
+                        itemNameUk = doseUi.item.nameUk
+                    )
+                )
             }
             clockTick.value++
         }
     }
 
-    fun undoLog(logId: Long) {
+    fun takeAllInSlot(group: StackSlotGroupUi, slotLabelEn: String, slotLabelUk: String) {
         viewModelScope.launch {
-            supplementRepository.undoLog(logId)
+            val pending = group.doses.filter { it.takenTodayLogId == null }
+            if (pending.isEmpty()) return@launch
+            val targets = pending.map { it.item.id to it.schedule?.id }
+            val createdIds = supplementRepository.logBatch(targets)
+            if (createdIds.isNotEmpty()) {
+                _events.tryEmit(
+                    StackSnackbarEvent.LoggedWithUndo(
+                        logIds = createdIds,
+                        itemNameEn = slotLabelEn,
+                        itemNameUk = slotLabelUk,
+                        isBatch = true
+                    )
+                )
+            }
             clockTick.value++
         }
     }
 
-    fun saveSupplement(item: SupplementItemEntity, schedule: SupplementScheduleEntity?) {
+    fun logQuickCaffeine(
+        mg: Int,
+        labelEn: String,
+        labelUk: String,
+        takenAt: Instant = Instant.now()
+    ) {
         viewModelScope.launch {
-            supplementRepository.saveSupplement(item, schedule)
+            val logId = supplementRepository.logQuickCaffeine(mg, labelEn, labelUk, takenAt)
+            if (logId > 0L) {
+                _events.tryEmit(
+                    StackSnackbarEvent.LoggedWithUndo(
+                        logIds = listOf(logId),
+                        itemNameEn = labelEn,
+                        itemNameUk = labelUk
+                    )
+                )
+            }
             clockTick.value++
+        }
+    }
+
+    fun updateLogTime(logId: Long, newTakenAt: Instant, caffeineMgOverride: Int? = null) {
+        viewModelScope.launch {
+            supplementRepository.updateLogTime(logId, newTakenAt, caffeineMgOverride)
+            clockTick.value++
+        }
+    }
+
+    fun undoLogs(logIds: List<Long>) {
+        viewModelScope.launch {
+            supplementRepository.undoLogs(logIds)
+            clockTick.value++
+        }
+    }
+
+    fun saveSupplement(item: SupplementItemEntity, schedules: List<SupplementScheduleEntity>) {
+        viewModelScope.launch {
+            supplementRepository.saveSupplement(item, schedules)
+            refreshNow()
         }
     }
 
     fun deleteSupplement(itemId: Long) {
         viewModelScope.launch {
             supplementRepository.deleteSupplement(itemId)
-            clockTick.value++
+            refreshNow()
         }
     }
 
@@ -262,7 +427,7 @@ class StackViewModel @Inject constructor(
         viewModelScope.launch {
             prefsRepo.setBedtimeMinutesOfDay(minutes)
             reminderScheduler.rescheduleAll()
-            clockTick.value++
+            refreshNow()
         }
     }
 
@@ -270,6 +435,12 @@ class StackViewModel @Inject constructor(
         viewModelScope.launch {
             prefsRepo.setStackRemindersEnabled(enabled)
             reminderScheduler.rescheduleAll()
+            refreshNow()
         }
+    }
+
+    fun scheduleTestReminder() {
+        reminderScheduler.scheduleTestReminderIn5Sec()
+        _events.tryEmit(StackSnackbarEvent.TestReminderScheduled)
     }
 }

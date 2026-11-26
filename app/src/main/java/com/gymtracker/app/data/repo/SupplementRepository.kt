@@ -12,6 +12,7 @@ import com.gymtracker.app.data.db.SupplementUnit
 import com.gymtracker.app.data.db.SupplementWithSchedules
 import com.gymtracker.app.data.db.SyncState
 import com.gymtracker.app.data.db.WorkoutDao
+import com.gymtracker.app.data.prefs.UserPreferencesRepository
 import com.gymtracker.app.work.StackReminderScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -27,7 +28,8 @@ class SupplementRepository @Inject constructor(
     private val database: GymTrackerDatabase,
     private val supplementDao: SupplementDao,
     private val workoutDao: WorkoutDao,
-    private val reminderScheduler: StackReminderScheduler
+    private val reminderScheduler: StackReminderScheduler,
+    private val prefsRepo: UserPreferencesRepository
 ) {
 
     fun observeVisibleStack(): Flow<List<SupplementWithSchedules>> =
@@ -172,8 +174,8 @@ class SupplementRepository @Inject constructor(
 
         database.withTransaction {
             for ((item, sched) in presets) {
-                val id = supplementDao.upsertItem(item)
-                supplementDao.upsertSchedule(sched.copy(supplementId = id))
+                val id = supplementDao.insertItem(item)
+                supplementDao.insertSchedule(sched.copy(supplementId = id))
             }
         }
         reminderScheduler.rescheduleAll()
@@ -182,28 +184,56 @@ class SupplementRepository @Inject constructor(
     suspend fun saveSupplement(
         item: SupplementItemEntity,
         schedule: SupplementScheduleEntity?
+    ): Long = saveSupplement(item, listOfNotNull(schedule))
+
+    suspend fun saveSupplement(
+        item: SupplementItemEntity,
+        schedules: List<SupplementScheduleEntity>
     ): Long = withContext(Dispatchers.IO) {
         val now = Instant.now()
         val itemId = database.withTransaction {
-            val savedId = supplementDao.upsertItem(
-                item.copy(updatedAt = now, deletedAt = null, syncState = SyncState.PENDING_UPLOAD)
-            )
-            if (schedule != null) {
-                val existingScheds = supplementDao.getSchedulesForItem(savedId)
-                val firstExisting = existingScheds.firstOrNull()
-                if (existingScheds.size > 1) {
-                    supplementDao.softDeleteSchedulesForItem(savedId, now)
-                }
-                supplementDao.upsertSchedule(
-                    schedule.copy(
-                        id = if (existingScheds.size == 1 && firstExisting != null) firstExisting.id else schedule.id,
-                        remoteId = if (existingScheds.size == 1 && firstExisting != null) firstExisting.remoteId else schedule.remoteId,
-                        supplementId = savedId,
-                        updatedAt = now,
-                        deletedAt = null,
-                        syncState = SyncState.PENDING_UPLOAD
-                    )
+            val savedId = if (item.id == 0L) {
+                supplementDao.insertItem(
+                    item.copy(updatedAt = now, deletedAt = null, syncState = SyncState.PENDING_UPLOAD)
                 )
+            } else {
+                supplementDao.updateItem(
+                    item.copy(updatedAt = now, deletedAt = null, syncState = SyncState.PENDING_UPLOAD)
+                )
+                item.id
+            }
+
+            val existingScheds = supplementDao.getSchedulesForItem(savedId)
+            val keptIds = schedules.mapNotNull { it.id.takeIf { id -> id > 0L } }.toSet()
+            for (old in existingScheds) {
+                if (old.id !in keptIds) {
+                    supplementDao.softDeleteScheduleById(old.id, now)
+                }
+            }
+
+            for (sched in schedules) {
+                val existing = existingScheds.firstOrNull { it.id == sched.id && sched.id > 0L }
+                if (existing != null) {
+                    supplementDao.updateSchedule(
+                        sched.copy(
+                            supplementId = savedId,
+                            remoteId = existing.remoteId,
+                            updatedAt = now,
+                            deletedAt = null,
+                            syncState = SyncState.PENDING_UPLOAD
+                        )
+                    )
+                } else {
+                    supplementDao.insertSchedule(
+                        sched.copy(
+                            id = 0L,
+                            supplementId = savedId,
+                            updatedAt = now,
+                            deletedAt = null,
+                            syncState = SyncState.PENDING_UPLOAD
+                        )
+                    )
+                }
             }
             savedId
         }
@@ -215,7 +245,7 @@ class SupplementRepository @Inject constructor(
         val now = Instant.now()
         database.withTransaction {
             val existing = supplementDao.getItemById(itemId) ?: return@withTransaction
-            supplementDao.upsertItem(
+            supplementDao.updateItem(
                 existing.copy(deletedAt = now, updatedAt = now, syncState = SyncState.PENDING_UPLOAD)
             )
             supplementDao.softDeleteSchedulesForItem(itemId, now)
@@ -228,13 +258,7 @@ class SupplementRepository @Inject constructor(
         val existing = supplementDao.getItemById(itemId) ?: return@withContext
         val now = Instant.now()
         val current = (existing.servingsRemaining ?: 0.0).coerceAtLeast(0.0)
-        supplementDao.upsertItem(
-            existing.copy(
-                servingsRemaining = current + addServings,
-                updatedAt = now,
-                syncState = SyncState.PENDING_UPLOAD
-            )
-        )
+        supplementDao.updateItemServings(itemId, current + addServings, now)
     }
 
     suspend fun logIntake(
@@ -242,56 +266,101 @@ class SupplementRepository @Inject constructor(
         doseOverride: Double? = null,
         caffeineMgOverride: Int? = null,
         takenAt: Instant = Instant.now(),
-        linkedWorkoutId: Long? = null
+        linkedWorkoutId: Long? = null,
+        scheduleId: Long? = null
     ): Long = withContext(Dispatchers.IO) {
         val logId = database.withTransaction {
-            val item = supplementDao.getItemById(itemId) ?: return@withTransaction -1L
-            val now = Instant.now()
-            val dose = doseOverride ?: item.defaultDose
-            val caffeine = caffeineMgOverride ?: item.caffeineMgPerServing
-
-            var targetWorkoutId = linkedWorkoutId
-            if (item.category == SupplementCategory.PRE_WORKOUT && targetWorkoutId == null) {
-                val active = workoutDao.getActiveWorkoutOnce()
-                if (active != null) {
-                    targetWorkoutId = active.workout.id
-                    if (!active.workout.tookPreWorkout) {
-                        workoutDao.updateWorkout(
-                            active.workout.copy(
-                                tookPreWorkout = true,
-                                updatedAt = now,
-                                syncState = SyncState.PENDING_UPLOAD
-                            )
-                        )
-                    }
-                }
-            }
-
-            val insertedLogId = supplementDao.upsertLog(
-                SupplementLogEntity(
-                    supplementId = item.id,
-                    takenAt = takenAt,
-                    dose = dose,
-                    caffeineMg = caffeine,
-                    linkedWorkoutId = targetWorkoutId,
-                    updatedAt = now,
-                    syncState = SyncState.PENDING_UPLOAD
-                )
+            insertSingleIntakeInTx(
+                itemId = itemId,
+                doseOverride = doseOverride,
+                caffeineMgOverride = caffeineMgOverride,
+                takenAt = takenAt,
+                linkedWorkoutId = linkedWorkoutId
             )
-
-            item.servingsRemaining?.let { rem ->
-                val ratio = if (item.defaultDose > 0.0) (dose / item.defaultDose).coerceAtLeast(0.1) else 1.0
-                supplementDao.upsertItem(
-                    item.copy(
-                        servingsRemaining = (rem - ratio).coerceAtLeast(0.0),
-                        updatedAt = now,
-                        syncState = SyncState.PENDING_UPLOAD
-                    )
-                )
-            }
-            insertedLogId
+        }
+        if (scheduleId != null && logId > 0L) {
+            prefsRepo.recordLogScheduleMapping(logId, scheduleId)
         }
         logId
+    }
+
+    suspend fun logBatch(
+        targets: List<Pair<Long, Long?>>,
+        takenAt: Instant = Instant.now()
+    ): List<Long> = withContext(Dispatchers.IO) {
+        if (targets.isEmpty()) return@withContext emptyList()
+        val created = mutableListOf<Pair<Long, Long?>>()
+        database.withTransaction {
+            for ((itemId, scheduleId) in targets) {
+                val logId = insertSingleIntakeInTx(
+                    itemId = itemId,
+                    doseOverride = null,
+                    caffeineMgOverride = null,
+                    takenAt = takenAt,
+                    linkedWorkoutId = null
+                )
+                if (logId > 0L) {
+                    created += logId to scheduleId
+                }
+            }
+        }
+        val mappings = created.mapNotNull { (logId, schedId) -> schedId?.let { logId to it } }
+        if (mappings.isNotEmpty()) {
+            prefsRepo.recordLogScheduleMappings(mappings)
+        }
+        created.map { it.first }
+    }
+
+    private suspend fun insertSingleIntakeInTx(
+        itemId: Long,
+        doseOverride: Double?,
+        caffeineMgOverride: Int?,
+        takenAt: Instant,
+        linkedWorkoutId: Long?
+    ): Long {
+        val item = supplementDao.getItemById(itemId) ?: return -1L
+        val now = Instant.now()
+        val dose = doseOverride ?: item.defaultDose
+        val caffeine = caffeineMgOverride ?: item.caffeineMgPerServing
+
+        var targetWorkoutId = linkedWorkoutId
+        if (item.category == SupplementCategory.PRE_WORKOUT && targetWorkoutId == null) {
+            val active = workoutDao.getActiveWorkoutOnce()
+            if (active != null) {
+                targetWorkoutId = active.workout.id
+                if (!active.workout.tookPreWorkout) {
+                    workoutDao.updateWorkout(
+                        active.workout.copy(
+                            tookPreWorkout = true,
+                            updatedAt = now,
+                            syncState = SyncState.PENDING_UPLOAD
+                        )
+                    )
+                }
+            }
+        }
+
+        val insertedLogId = supplementDao.insertLog(
+            SupplementLogEntity(
+                supplementId = item.id,
+                takenAt = takenAt,
+                dose = dose,
+                caffeineMg = caffeine,
+                linkedWorkoutId = targetWorkoutId,
+                updatedAt = now,
+                syncState = SyncState.PENDING_UPLOAD
+            )
+        )
+
+        item.servingsRemaining?.let { rem ->
+            val ratio = if (item.defaultDose > 0.0) (dose / item.defaultDose).coerceAtLeast(0.1) else 1.0
+            supplementDao.updateItemServings(
+                itemId = item.id,
+                servings = (rem - ratio).coerceAtLeast(0.0),
+                updatedAt = now
+            )
+        }
+        return insertedLogId
     }
 
     suspend fun logQuickCaffeine(
@@ -304,7 +373,7 @@ class SupplementRepository @Inject constructor(
         database.withTransaction {
             val existing = supplementDao.getAllItemsOnce()
                 .firstOrNull { it.deletedAt == null && it.notes == QUICK_CAFFEINE_TAG }
-            val itemId = existing?.id ?: supplementDao.upsertItem(
+            val itemId = existing?.id ?: supplementDao.insertItem(
                 SupplementItemEntity(
                     nameEn = "Coffee / Caffeine",
                     nameUk = "Кава / Кофеїн",
@@ -317,7 +386,7 @@ class SupplementRepository @Inject constructor(
                     syncState = SyncState.PENDING_UPLOAD
                 )
             )
-            supplementDao.upsertLog(
+            supplementDao.insertLog(
                 SupplementLogEntity(
                     supplementId = itemId,
                     takenAt = takenAt,
@@ -330,44 +399,67 @@ class SupplementRepository @Inject constructor(
         }
     }
 
-    suspend fun undoLog(logId: Long) = withContext(Dispatchers.IO) {
+    suspend fun updateLogTime(
+        logId: Long,
+        newTakenAt: Instant,
+        caffeineMgOverride: Int? = null
+    ) = withContext(Dispatchers.IO) {
         database.withTransaction {
             val log = supplementDao.getLogById(logId) ?: return@withTransaction
             if (log.deletedAt != null) return@withTransaction
-            val now = Instant.now()
-            supplementDao.upsertLog(
-                log.copy(deletedAt = now, updatedAt = now, syncState = SyncState.PENDING_UPLOAD)
-            )
-
-            val item = supplementDao.getItemById(log.supplementId)
-            if (item != null && item.servingsRemaining != null) {
-                val ratio = if (item.defaultDose > 0.0) (log.dose / item.defaultDose).coerceAtLeast(0.1) else 1.0
-                supplementDao.upsertItem(
-                    item.copy(
-                        servingsRemaining = item.servingsRemaining + ratio,
-                        updatedAt = now,
-                        syncState = SyncState.PENDING_UPLOAD
-                    )
+            supplementDao.updateLog(
+                log.copy(
+                    takenAt = newTakenAt,
+                    caffeineMg = caffeineMgOverride ?: log.caffeineMg,
+                    updatedAt = Instant.now(),
+                    syncState = SyncState.PENDING_UPLOAD
                 )
-            }
+            )
+        }
+    }
 
-            val linkedWId = log.linkedWorkoutId
-            if (linkedWId != null && item?.category == SupplementCategory.PRE_WORKOUT) {
-                val remainingForWorkout = supplementDao.findPreWorkoutLogsForWorkout(linkedWId)
-                if (remainingForWorkout.isEmpty()) {
-                    val w = workoutDao.getWorkoutById(linkedWId)
-                    if (w != null && w.tookPreWorkout) {
-                        workoutDao.updateWorkout(
-                            w.copy(
-                                tookPreWorkout = false,
-                                updatedAt = now,
-                                syncState = SyncState.PENDING_UPLOAD
+    suspend fun undoLog(logId: Long) = undoLogs(listOf(logId))
+
+    suspend fun undoLogs(logIds: List<Long>) = withContext(Dispatchers.IO) {
+        if (logIds.isEmpty()) return@withContext
+        database.withTransaction {
+            val now = Instant.now()
+            for (logId in logIds) {
+                val log = supplementDao.getLogById(logId) ?: continue
+                if (log.deletedAt != null) continue
+                supplementDao.updateLog(
+                    log.copy(deletedAt = now, updatedAt = now, syncState = SyncState.PENDING_UPLOAD)
+                )
+
+                val item = supplementDao.getItemById(log.supplementId)
+                if (item != null && item.servingsRemaining != null) {
+                    val ratio = if (item.defaultDose > 0.0) (log.dose / item.defaultDose).coerceAtLeast(0.1) else 1.0
+                    supplementDao.updateItemServings(
+                        itemId = item.id,
+                        servings = item.servingsRemaining + ratio,
+                        updatedAt = now
+                    )
+                }
+
+                val linkedWId = log.linkedWorkoutId
+                if (linkedWId != null && item?.category == SupplementCategory.PRE_WORKOUT) {
+                    val remainingForWorkout = supplementDao.findPreWorkoutLogsForWorkout(linkedWId)
+                    if (remainingForWorkout.isEmpty()) {
+                        val w = workoutDao.getWorkoutById(linkedWId)
+                        if (w != null && w.tookPreWorkout) {
+                            workoutDao.updateWorkout(
+                                w.copy(
+                                    tookPreWorkout = false,
+                                    updatedAt = now,
+                                    syncState = SyncState.PENDING_UPLOAD
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
         }
+        prefsRepo.removeLogScheduleMappings(logIds)
     }
 
     suspend fun syncPreWorkoutOnWorkoutStart(workoutId: Long, requestedByUser: Boolean): Boolean =
@@ -376,7 +468,7 @@ class SupplementRepository @Inject constructor(
             val recentLog = supplementDao.findRecentPreWorkoutLog(now.minusSeconds(90 * 60L))
             if (recentLog != null) {
                 if (recentLog.linkedWorkoutId != workoutId) {
-                    supplementDao.upsertLog(
+                    supplementDao.updateLog(
                         recentLog.copy(
                             linkedWorkoutId = workoutId,
                             updatedAt = now,
@@ -388,11 +480,18 @@ class SupplementRepository @Inject constructor(
             }
             if (!requestedByUser) return@withContext false
 
-            val preItem = supplementDao.getActiveWithSchedulesOnce()
+            val preSw = supplementDao.getActiveWithSchedulesOnce()
                 .firstOrNull { it.item.deletedAt == null && it.item.category == SupplementCategory.PRE_WORKOUT }
-                ?.item
-            if (preItem != null) {
-                logIntake(itemId = preItem.id, linkedWorkoutId = workoutId, takenAt = now)
+            if (preSw != null) {
+                val beforeSchedId = preSw.schedules
+                    .firstOrNull { it.enabled && it.deletedAt == null && it.triggerType == SupplementTrigger.BEFORE_WORKOUT }
+                    ?.id
+                logIntake(
+                    itemId = preSw.item.id,
+                    linkedWorkoutId = workoutId,
+                    takenAt = now,
+                    scheduleId = beforeSchedId
+                )
             }
             true
         }
@@ -404,7 +503,7 @@ class SupplementRepository @Inject constructor(
             if (alreadyLinked.isNotEmpty()) return@withContext
             val recentUnlinked = supplementDao.findRecentPreWorkoutLog(now.minusSeconds(90 * 60L))
             if (recentUnlinked != null) {
-                supplementDao.upsertLog(
+                supplementDao.updateLog(
                     recentUnlinked.copy(
                         linkedWorkoutId = workoutId,
                         updatedAt = now,
@@ -412,18 +511,23 @@ class SupplementRepository @Inject constructor(
                     )
                 )
             } else {
-                val preItem = supplementDao.getActiveWithSchedulesOnce()
+                val preSw = supplementDao.getActiveWithSchedulesOnce()
                     .firstOrNull { it.item.deletedAt == null && it.item.category == SupplementCategory.PRE_WORKOUT }
-                    ?.item
-                if (preItem != null) {
-                    logIntake(itemId = preItem.id, linkedWorkoutId = workoutId, takenAt = now)
+                if (preSw != null) {
+                    val beforeSchedId = preSw.schedules
+                        .firstOrNull { it.enabled && it.deletedAt == null && it.triggerType == SupplementTrigger.BEFORE_WORKOUT }
+                        ?.id
+                    logIntake(
+                        itemId = preSw.item.id,
+                        linkedWorkoutId = workoutId,
+                        takenAt = now,
+                        scheduleId = beforeSchedId
+                    )
                 }
             }
         } else {
             val linked = supplementDao.findPreWorkoutLogsForWorkout(workoutId)
-            for (log in linked) {
-                undoLog(log.id)
-            }
+            undoLogs(linked.map { it.id })
         }
     }
 

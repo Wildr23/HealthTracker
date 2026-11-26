@@ -1,5 +1,6 @@
 package com.gymtracker.app.data.scale
 
+import android.app.AlarmManager
 import android.bluetooth.BluetoothAdapter
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -22,7 +23,8 @@ class XiaomiScaleBootReceiver : BroadcastReceiver() {
     lateinit var stackReminderScheduler: StackReminderScheduler
 
     override fun onReceive(context: Context, intent: Intent) {
-        val shouldSync = when (intent.action) {
+        val action = intent.action ?: return
+        val shouldSyncBle = when (action) {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED -> true
             BluetoothAdapter.ACTION_STATE_CHANGED ->
@@ -30,13 +32,22 @@ class XiaomiScaleBootReceiver : BroadcastReceiver() {
                     BluetoothAdapter.STATE_ON
             else -> false
         }
-        if (!shouldSync) return
+        val shouldSyncReminders = action in setOf(
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED,
+            Intent.ACTION_TIME_CHANGED,
+            Intent.ACTION_TIMEZONE_CHANGED
+        )
+        if (!shouldSyncBle && !shouldSyncReminders) return
 
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                bleController.syncBackgroundScan()
-                if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) {
+                if (shouldSyncBle) {
+                    bleController.syncBackgroundScan()
+                }
+                if (shouldSyncReminders) {
                     stackReminderScheduler.rescheduleAll()
                 }
             } finally {

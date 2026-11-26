@@ -1,12 +1,20 @@
 package com.gymtracker.app.ui.stack
 
 import android.Manifest
+import android.app.AlarmManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -31,23 +39,31 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Medication
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material.icons.filled.WbTwilight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -70,18 +86,27 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -90,6 +115,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gymtracker.app.R
 import com.gymtracker.app.data.db.SupplementCategory
@@ -98,13 +126,15 @@ import com.gymtracker.app.data.db.SupplementScheduleEntity
 import com.gymtracker.app.data.db.SupplementTrigger
 import com.gymtracker.app.data.db.SupplementUnit
 import com.gymtracker.app.data.db.SupplementWithSchedules
+import com.gymtracker.app.data.repo.SupplementRepository
 import com.gymtracker.app.domain.CaffeineSleepStatus
 import com.gymtracker.app.domain.CyclePhase
 import com.gymtracker.app.domain.InteractionKind
+import com.gymtracker.app.domain.StackInteraction
 import com.gymtracker.app.domain.StackTimeSlot
 import com.gymtracker.app.domain.SupplementInteractionEngine
 import com.gymtracker.app.domain.SupplementReferenceEntry
-import com.gymtracker.app.ui.common.formatInstantShort
+import com.gymtracker.app.ui.common.formatDateShort
 import com.gymtracker.app.ui.common.isUkrainianLocale
 import com.gymtracker.app.ui.components.CaffeineDecayChart
 import com.gymtracker.app.ui.scale.ScaleBadgePill
@@ -114,12 +144,23 @@ import com.gymtracker.app.ui.theme.ElectricBlue
 import com.gymtracker.app.ui.theme.EmeraldRest
 import com.gymtracker.app.ui.theme.GoldPr
 import com.gymtracker.app.ui.theme.ObsidianCard
+import com.gymtracker.app.work.NextReminderInfo
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 import kotlin.math.roundToInt
+
+private data class ScheduleDraft(
+    val key: String = UUID.randomUUID().toString(),
+    val existingId: Long = 0L,
+    val remoteId: String? = null,
+    val trigger: SupplementTrigger = SupplementTrigger.WITH_MEAL,
+    val timeOfDay: LocalTime? = LocalTime.of(9, 0),
+    val daysOfWeekMask: Int = 0b1111111
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -129,41 +170,101 @@ fun StackScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val isUk = isUkrainianLocale()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     var selectedTab by remember { mutableIntStateOf(0) }
-    var editingItem by remember { mutableStateOf<StackChecklistItemUi?>(null) }
+    var editingWithSchedules by remember { mutableStateOf<SupplementWithSchedules?>(null) }
     var prefillEntry by remember { mutableStateOf<SupplementReferenceEntry?>(null) }
     var showAddSheet by remember { mutableStateOf(false) }
     var showCompatGuide by remember { mutableStateOf(false) }
-    var restockTarget by remember { mutableStateOf<StackChecklistItemUi?>(null) }
+    var restockTarget by remember { mutableStateOf<StackShelfItemUi?>(null) }
     var showBedtimeDialog by remember { mutableStateOf(false) }
-    var compatExpanded by remember { mutableStateOf(true) }
+    var timeTargetDose by remember { mutableStateOf<StackDoseItemUi?>(null) }
+    var timeTargetLog by remember { mutableStateOf<StackLogEntryUi?>(null) }
+    var caffeineDialogTarget by remember { mutableStateOf<StackLogEntryUi?>(null) }
+    var showCustomCaffeineDialog by remember { mutableStateOf(false) }
+
+    var hasNotifPerm by remember { mutableStateOf(checkNotifPerm(context)) }
+    var canExactAlarm by remember { mutableStateOf(checkExactAlarmPerm(context)) }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasNotifPerm = checkNotifPerm(context)
+                canExactAlarm = checkExactAlarmPerm(context)
+                viewModel.refreshNow()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val notifPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        viewModel.setRemindersEnabled(granted)
+        hasNotifPerm = granted
+        if (granted) {
+            viewModel.setRemindersEnabled(true)
+        } else {
+            viewModel.refreshNow()
+        }
     }
 
     val undoLabel = stringResource(R.string.stack_undo)
     val loggedPattern = stringResource(R.string.stack_logged_snackbar)
+    val batchLoggedPattern = stringResource(R.string.stack_logged_batch_snackbar)
+    val testScheduledMsg = stringResource(R.string.stack_test_push_scheduled)
+
     LaunchedEffect(Unit) {
         viewModel.refreshNow()
         viewModel.events.collect { event ->
             when (event) {
                 is StackSnackbarEvent.LoggedWithUndo -> {
-                    val name = if (isUk) event.itemNameUk else event.itemNameEn
+                    val label = if (isUk) event.itemNameUk else event.itemNameEn
+                    val msg = if (event.isBatch) {
+                        String.format(batchLoggedPattern, event.logIds.size, label)
+                    } else {
+                        String.format(loggedPattern, label)
+                    }
                     val res = snackbarHostState.showSnackbar(
-                        message = String.format(loggedPattern, name),
+                        message = msg,
                         actionLabel = undoLabel,
                         duration = SnackbarDuration.Short
                     )
                     if (res == SnackbarResult.ActionPerformed) {
-                        viewModel.undoLog(event.logId)
+                        viewModel.undoLogs(event.logIds)
                     }
                 }
                 StackSnackbarEvent.Restocked -> Unit
+                StackSnackbarEvent.TestReminderScheduled -> {
+                    snackbarHostState.showSnackbar(
+                        message = testScheduledMsg,
+                        duration = SnackbarDuration.Short
+                    )
+                }
+            }
+        }
+    }
+
+    val openNotifPermission: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    val openExactAlarmSettings: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val intent = Intent(
+                Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                Uri.parse("package:${context.packageName}")
+            )
+            runCatching { context.startActivity(intent) }.onFailure {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${context.packageName}")
+                    )
+                )
             }
         }
     }
@@ -172,10 +273,10 @@ fun StackScreen(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            if (!state.isStackEmpty) {
+            if (!state.isStackEmpty && selectedTab != 2) {
                 FloatingActionButton(
                     onClick = {
-                        editingItem = null
+                        editingWithSchedules = null
                         prefillEntry = null
                         showAddSheet = true
                     },
@@ -205,52 +306,81 @@ fun StackScreen(
                     onClick = { selectedTab = 1 },
                     text = { Text(stringResource(R.string.stack_tab_inventory), maxLines = 1) }
                 )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = { Text(stringResource(R.string.stack_tab_history), maxLines = 1) }
+                )
             }
 
-            if (selectedTab == 0) {
-                StackTodayTab(
+            when (selectedTab) {
+                0 -> StackTodayTab(
                     state = state,
                     isUk = isUk,
-                    compatExpanded = compatExpanded,
-                    onToggleCompat = { compatExpanded = !compatExpanded },
+                    hasNotifPerm = hasNotifPerm,
+                    canExactAlarm = canExactAlarm,
+                    onRequestNotifPerm = openNotifPermission,
+                    onOpenExactAlarmSettings = openExactAlarmSettings,
                     onOpenCompatGuide = { showCompatGuide = true },
                     onSeedStarterStack = { viewModel.seedDefaultStack() },
                     onOpenAddManual = {
-                        editingItem = null
+                        editingWithSchedules = null
                         prefillEntry = null
                         showAddSheet = true
                     },
-                    onToggleItem = { viewModel.toggleTakenToday(it) },
+                    onToggleDose = { viewModel.toggleDose(it) },
+                    onOpenDoseTimePicker = { timeTargetDose = it },
+                    onTakeAllSlot = { grp, en, uk -> viewModel.takeAllInSlot(grp, en, uk) },
+                    onEditItem = { sw ->
+                        editingWithSchedules = sw
+                        prefillEntry = null
+                        showAddSheet = true
+                    },
                     onQuickCaffeine = { mg, en, uk -> viewModel.logQuickCaffeine(mg, en, uk) },
+                    onOpenCustomCaffeine = { showCustomCaffeineDialog = true },
+                    onEditCaffeineLog = { caffeineDialogTarget = it },
                     onRestockClick = { restockTarget = it },
                     onOpenBedtimePicker = { showBedtimeDialog = true }
                 )
-            } else {
-                StackInventoryTab(
+                1 -> StackInventoryTab(
                     state = state,
                     isUk = isUk,
+                    hasNotifPerm = hasNotifPerm,
+                    canExactAlarm = canExactAlarm,
+                    onRequestNotifPerm = openNotifPermission,
+                    onOpenExactAlarmSettings = openExactAlarmSettings,
                     onToggleReminders = { enabled ->
-                        if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            val granted = ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.POST_NOTIFICATIONS
-                            ) == PackageManager.PERMISSION_GRANTED
-                            if (!granted) {
-                                notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                return@StackInventoryTab
-                            }
+                        if (enabled && !hasNotifPerm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            return@StackInventoryTab
                         }
                         viewModel.setRemindersEnabled(enabled)
                     },
+                    onTestPush = {
+                        if (!hasNotifPerm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            viewModel.scheduleTestReminder()
+                        }
+                    },
                     onOpenBedtimePicker = { showBedtimeDialog = true },
                     onOpenCompatGuide = { showCompatGuide = true },
-                    onEditItem = {
-                        editingItem = it
+                    onEditItem = { shelf ->
+                        editingWithSchedules = shelf.withSchedules
                         prefillEntry = null
                         showAddSheet = true
                     },
-                    onRestockItem = { restockTarget = it },
-                    onDeleteLog = { viewModel.undoLog(it) }
+                    onRestockItem = { restockTarget = it }
+                )
+                else -> StackHistoryTab(
+                    state = state,
+                    isUk = isUk,
+                    onEditLogTime = { entry ->
+                        val isCaf = entry.item?.notes == SupplementRepository.QUICK_CAFFEINE_TAG ||
+                            (entry.log.caffeineMg ?: 0) > 0
+                        if (isCaf) caffeineDialogTarget = entry else timeTargetLog = entry
+                    },
+                    onDeleteLog = { viewModel.undoLogs(listOf(it)) }
                 )
             }
         }
@@ -259,10 +389,11 @@ fun StackScreen(
     if (showCompatGuide) {
         CompatibilityReferenceSheet(
             isUk = isUk,
+            stackInteractions = state.interactions,
             onDismiss = { showCompatGuide = false },
             onAddPreset = { entry ->
                 showCompatGuide = false
-                editingItem = null
+                editingWithSchedules = null
                 prefillEntry = entry
                 showAddSheet = true
             }
@@ -271,27 +402,27 @@ fun StackScreen(
 
     if (showAddSheet) {
         AddEditSupplementSheet(
-            initial = editingItem,
+            initial = editingWithSchedules,
             prefill = prefillEntry,
-            existingStack = state.inventoryItems.map { it.withSchedules },
+            existingStack = state.shelfItems.map { it.withSchedules },
             bedtimeMinutesOfDay = state.bedtimeMinutesOfDay,
             isUk = isUk,
             onDismiss = {
                 showAddSheet = false
-                editingItem = null
+                editingWithSchedules = null
                 prefillEntry = null
             },
-            onSave = { item, schedule ->
-                viewModel.saveSupplement(item, schedule)
+            onSave = { item, schedules ->
+                viewModel.saveSupplement(item, schedules)
                 showAddSheet = false
-                editingItem = null
+                editingWithSchedules = null
                 prefillEntry = null
             },
-            onDelete = editingItem?.let { target ->
+            onDelete = editingWithSchedules?.let { target ->
                 {
-                    viewModel.deleteSupplement(target.withSchedules.item.id)
+                    viewModel.deleteSupplement(target.item.id)
                     showAddSheet = false
-                    editingItem = null
+                    editingWithSchedules = null
                     prefillEntry = null
                 }
             }
@@ -393,6 +524,282 @@ fun StackScreen(
             }
         )
     }
+
+    timeTargetDose?.let { dose ->
+        val zone = ZoneId.systemDefault()
+        val existingLogId = dose.takenTodayLogId
+        val baseDate = dose.takenAt?.atZone(zone)?.toLocalDate() ?: LocalDate.now(zone)
+        val initTime = dose.takenAt?.atZone(zone)?.toLocalTime() ?: LocalTime.now(zone)
+        val schedTime = dose.schedule?.timeOfDay
+        val name = if (isUk) dose.item.nameUk else dose.item.nameEn
+        IntakeTimePickerDialog(
+            title = "$name • ${stringResource(R.string.stack_time_dialog_title)}",
+            baseDate = baseDate,
+            initialTime = initTime,
+            scheduledTime = schedTime,
+            onDismiss = { timeTargetDose = null },
+            onConfirm = { newInstant ->
+                if (existingLogId != null) {
+                    viewModel.updateLogTime(existingLogId, newInstant)
+                } else {
+                    viewModel.logDoseAtTime(dose, newInstant)
+                }
+                timeTargetDose = null
+            }
+        )
+    }
+
+    timeTargetLog?.let { entry ->
+        val zone = ZoneId.systemDefault()
+        val zdt = entry.log.takenAt.atZone(zone)
+        val name = entry.item?.let { if (isUk) it.nameUk else it.nameEn }
+            ?: stringResource(R.string.stack_time_dialog_title)
+        IntakeTimePickerDialog(
+            title = "$name • ${stringResource(R.string.stack_time_dialog_title)}",
+            baseDate = zdt.toLocalDate(),
+            initialTime = zdt.toLocalTime(),
+            scheduledTime = null,
+            onDismiss = { timeTargetLog = null },
+            onConfirm = { newInstant ->
+                viewModel.updateLogTime(entry.log.id, newInstant)
+                timeTargetLog = null
+            }
+        )
+    }
+
+    if (showCustomCaffeineDialog) {
+        val zone = ZoneId.systemDefault()
+        CaffeineLogTimeDialog(
+            title = stringResource(R.string.stack_caffeine_dialog_title),
+            baseDate = LocalDate.now(zone),
+            initialTime = LocalTime.now(zone),
+            initialMg = 100,
+            onDismiss = { showCustomCaffeineDialog = false },
+            onConfirm = { mg, instant ->
+                viewModel.logQuickCaffeine(mg, "Coffee / Caffeine", "Кава / Кофеїн", instant)
+                showCustomCaffeineDialog = false
+            }
+        )
+    }
+
+    caffeineDialogTarget?.let { entry ->
+        val zone = ZoneId.systemDefault()
+        val zdt = entry.log.takenAt.atZone(zone)
+        val initMg = entry.log.caffeineMg ?: entry.item?.caffeineMgPerServing ?: 100
+        CaffeineLogTimeDialog(
+            title = stringResource(R.string.stack_caffeine_edit_title),
+            baseDate = zdt.toLocalDate(),
+            initialTime = zdt.toLocalTime(),
+            initialMg = initMg,
+            onDismiss = { caffeineDialogTarget = null },
+            onDelete = {
+                viewModel.undoLogs(listOf(entry.log.id))
+                caffeineDialogTarget = null
+            },
+            onConfirm = { mg, newInstant ->
+                viewModel.updateLogTime(entry.log.id, newInstant, caffeineMgOverride = mg)
+                caffeineDialogTarget = null
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun IntakeTimePickerDialog(
+    title: String,
+    baseDate: LocalDate,
+    initialTime: LocalTime,
+    scheduledTime: LocalTime?,
+    onDismiss: () -> Unit,
+    onConfirm: (Instant) -> Unit
+) {
+    val zone = ZoneId.systemDefault()
+    var selectedTime by remember { mutableStateOf(initialTime) }
+    var pickerRev by remember { mutableIntStateOf(0) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    AssistChip(
+                        onClick = {
+                            selectedTime = LocalTime.now(zone)
+                            pickerRev++
+                        },
+                        label = { Text(stringResource(R.string.stack_time_now), maxLines = 1) }
+                    )
+                    listOf(30L to "-30м", 60L to "-1г", 120L to "-2г").forEach { (mins, label) ->
+                        AssistChip(
+                            onClick = {
+                                selectedTime = LocalTime.now(zone).minusMinutes(mins)
+                                pickerRev++
+                            },
+                            label = { Text(label, maxLines = 1) }
+                        )
+                    }
+                    scheduledTime?.let { st ->
+                        val stStr = st.format(DateTimeFormatter.ofPattern("HH:mm"))
+                        AssistChip(
+                            onClick = {
+                                selectedTime = st
+                                pickerRev++
+                            },
+                            label = { Text(stringResource(R.string.stack_time_on_schedule, stStr), maxLines = 1) }
+                        )
+                    }
+                }
+
+                key(pickerRev) {
+                    val tpState = rememberTimePickerState(
+                        initialHour = selectedTime.hour,
+                        initialMinute = selectedTime.minute,
+                        is24Hour = true
+                    )
+                    LaunchedEffect(tpState.hour, tpState.minute) {
+                        selectedTime = LocalTime.of(tpState.hour, tpState.minute)
+                    }
+                    TimePicker(state = tpState)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val chosenInstant = baseDate.atTime(selectedTime).atZone(zone).toInstant()
+                    onConfirm(chosenInstant)
+                }
+            ) {
+                Text(stringResource(R.string.action_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun CaffeineLogTimeDialog(
+    title: String,
+    baseDate: LocalDate,
+    initialTime: LocalTime,
+    initialMg: Int,
+    onDismiss: () -> Unit,
+    onDelete: (() -> Unit)? = null,
+    onConfirm: (Int, Instant) -> Unit
+) {
+    val zone = ZoneId.systemDefault()
+    var mgText by remember { mutableStateOf(initialMg.coerceAtLeast(1).toString()) }
+    var selectedTime by remember { mutableStateOf(initialTime) }
+    var pickerRev by remember { mutableIntStateOf(0) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(75, 100, 160).forEach { presetMg ->
+                        FilterChip(
+                            selected = mgText.toIntOrNull() == presetMg,
+                            onClick = { mgText = presetMg.toString() },
+                            label = { Text("$presetMg mg", maxLines = 1) }
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = mgText,
+                    onValueChange = { mgText = it.filter(Char::isDigit).take(4) },
+                    label = { Text(stringResource(R.string.stack_field_caffeine)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    AssistChip(
+                        onClick = {
+                            selectedTime = LocalTime.now(zone)
+                            pickerRev++
+                        },
+                        label = { Text(stringResource(R.string.stack_time_now), maxLines = 1) }
+                    )
+                    listOf(30L to "-30м", 60L to "-1г", 120L to "-2г", 180L to "-3г").forEach { (mins, label) ->
+                        AssistChip(
+                            onClick = {
+                                selectedTime = LocalTime.now(zone).minusMinutes(mins)
+                                pickerRev++
+                            },
+                            label = { Text(label, maxLines = 1) }
+                        )
+                    }
+                }
+
+                key(pickerRev) {
+                    val tpState = rememberTimePickerState(
+                        initialHour = selectedTime.hour,
+                        initialMinute = selectedTime.minute,
+                        is24Hour = true
+                    )
+                    LaunchedEffect(tpState.hour, tpState.minute) {
+                        selectedTime = LocalTime.of(tpState.hour, tpState.minute)
+                    }
+                    TimePicker(state = tpState)
+                }
+            }
+        },
+        confirmButton = {
+            val parsedMg = mgText.toIntOrNull()?.coerceIn(1, 1500) ?: 100
+            Button(
+                onClick = {
+                    val chosenInstant = baseDate.atTime(selectedTime).atZone(zone).toInstant()
+                    onConfirm(parsedMg, chosenInstant)
+                }
+            ) {
+                Text(stringResource(R.string.action_save))
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (onDelete != null) {
+                    TextButton(onClick = onDelete) {
+                        Text(stringResource(R.string.action_delete), color = CoralEnergy)
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -400,16 +807,25 @@ fun StackScreen(
 private fun StackTodayTab(
     state: StackUiState,
     isUk: Boolean,
-    compatExpanded: Boolean,
-    onToggleCompat: () -> Unit,
+    hasNotifPerm: Boolean,
+    canExactAlarm: Boolean,
+    onRequestNotifPerm: () -> Unit,
+    onOpenExactAlarmSettings: () -> Unit,
     onOpenCompatGuide: () -> Unit,
     onSeedStarterStack: () -> Unit,
     onOpenAddManual: () -> Unit,
-    onToggleItem: (StackChecklistItemUi) -> Unit,
+    onToggleDose: (StackDoseItemUi) -> Unit,
+    onOpenDoseTimePicker: (StackDoseItemUi) -> Unit,
+    onTakeAllSlot: (StackSlotGroupUi, String, String) -> Unit,
+    onEditItem: (SupplementWithSchedules) -> Unit,
     onQuickCaffeine: (Int, String, String) -> Unit,
-    onRestockClick: (StackChecklistItemUi) -> Unit,
+    onOpenCustomCaffeine: () -> Unit,
+    onEditCaffeineLog: (StackLogEntryUi) -> Unit,
+    onRestockClick: (StackShelfItemUi) -> Unit,
     onOpenBedtimePicker: () -> Unit
 ) {
+    val expandedOverrides = remember { mutableStateMapOf<StackTimeSlot, Boolean>() }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 92.dp),
@@ -456,20 +872,39 @@ private fun StackTodayTab(
                 }
             }
         } else {
-            // Daily Progress & Streak Card
+            // 1. Slim Daily Checklist Header Card (Apple Health / SuppCo ring + streak + compat shortcut)
             item {
                 val total = state.totalDueTodayCount.coerceAtLeast(1)
                 val prog = (state.takenTodayCount.toFloat() / total.toFloat()).coerceIn(0f, 1f)
                 val allDone = state.totalDueTodayCount > 0 && state.takenTodayCount >= state.totalDueTodayCount
+
                 ObsidianCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(54.dp)) {
+                            CircularProgressIndicator(
+                                progress = { prog },
+                                color = if (allDone) EmeraldRest else ElectricBlue,
+                                trackColor = CardElevated,
+                                strokeWidth = 5.dp,
+                                strokeCap = StrokeCap.Round,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Text(
+                                text = "${state.takenTodayCount}/${state.totalDueTodayCount}",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (allDone) EmeraldRest else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
                                 text = stringResource(R.string.stack_progress_title),
@@ -485,34 +920,112 @@ private fun StackTodayTab(
                                 color = if (allDone) EmeraldRest else ElectricBlue
                             )
                         }
-                        Row(
-                            verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "${state.takenTodayCount} / ${state.totalDueTodayCount}",
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (allDone) EmeraldRest else MaterialTheme.colorScheme.onSurface
-                            )
+                        Box {
+                            Surface(
+                                shape = CircleShape,
+                                color = CardElevated,
+                                onClick = onOpenCompatGuide
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MenuBook,
+                                    contentDescription = stringResource(R.string.stack_compat_guide_btn),
+                                    tint = if (state.activeConflictCount > 0) CoralEnergy else ElectricBlue,
+                                    modifier = Modifier.padding(10.dp).size(20.dp)
+                                )
+                            }
+                            if (state.activeConflictCount > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(CoralEnergy)
+                                        .align(Alignment.TopEnd)
+                                )
+                            }
                         }
-                        LinearProgressIndicator(
-                            progress = { prog },
-                            color = if (allDone) EmeraldRest else ElectricBlue,
-                            trackColor = CardElevated,
-                            gapSize = 0.dp,
-                            drawStopIndicator = {},
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp))
+                    }
+                }
+            }
+        }
+
+        // 2. Permission Alert Banner (ONLY when reminders enabled and permission missing)
+        if (state.remindersEnabled && (!hasNotifPerm || !canExactAlarm)) {
+            item {
+                val isNotifMissing = !hasNotifPerm
+                ObsidianCard(highlightedBorder = GoldPr, modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = GoldPr)
+                        Text(
+                            text = if (isNotifMissing) stringResource(R.string.stack_perm_notif_banner)
+                            else stringResource(R.string.stack_perm_exact_banner),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedButton(
+                            onClick = if (isNotifMissing) onRequestNotifPerm else onOpenExactAlarmSettings,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text(stringResource(R.string.stack_perm_grant_btn), maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Slim Active Conflict Strip (ONLY if CONFLICT exists)
+        if (state.activeConflictCount > 0) {
+            item {
+                ObsidianCard(
+                    highlightedBorder = CoralEnergy,
+                    onClick = onOpenCompatGuide,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = CoralEnergy, modifier = Modifier.size(18.dp))
+                        Text(
+                            text = stringResource(R.string.stack_conflict_banner_count, state.activeConflictCount),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = CoralEnergy,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
             }
         }
 
-        // Low-Stock Banner
+        // 4. Chronological Grouped Time-Slot Cards (Medisafe / Apple Health pattern)
+        items(state.slotGroups, key = { "slot_${it.slot.name}" }) { group ->
+            val slotShortEn = slotShortLabelEn(group.slot)
+            val slotShortUk = slotShortLabelUk(group.slot)
+            val isExpanded = expandedOverrides[group.slot] ?: !group.isComplete
+
+            StackSlotGroupCard(
+                group = group,
+                isUk = isUk,
+                isExpanded = isExpanded,
+                onToggleExpand = { expandedOverrides[group.slot] = !isExpanded },
+                onTakeAll = { onTakeAllSlot(group, slotShortEn, slotShortUk) },
+                onToggleDose = onToggleDose,
+                onOpenDoseTimePicker = onOpenDoseTimePicker,
+                onEditItem = onEditItem
+            )
+        }
+
+        // 5. Low-Stock Banner (only if low stock)
         if (state.lowStockItems.isNotEmpty()) {
             item {
                 ObsidianCard(highlightedBorder = GoldPr, modifier = Modifier.fillMaxWidth()) {
@@ -524,7 +1037,7 @@ private fun StackTodayTab(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = GoldPr)
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = GoldPr, modifier = Modifier.size(18.dp))
                             Text(
                                 text = stringResource(R.string.stack_low_stock_title),
                                 style = MaterialTheme.typography.titleSmall,
@@ -550,7 +1063,7 @@ private fun StackTodayTab(
             }
         }
 
-        // Caffeine & Sleep Guard Card
+        // 6. Compact Caffeine & Sleep Guard Card (below checklist!)
         state.caffeineAnalysis?.let { caf ->
             item {
                 val statusColor = when (caf.status) {
@@ -568,7 +1081,7 @@ private fun StackTodayTab(
 
                 ObsidianCard(modifier = Modifier.fillMaxWidth()) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Row(
@@ -581,10 +1094,10 @@ private fun StackTodayTab(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Icon(Icons.Default.Coffee, contentDescription = null, tint = GoldPr)
+                                Icon(Icons.Default.Coffee, contentDescription = null, tint = GoldPr, modifier = Modifier.size(18.dp))
                                 Text(
                                     text = stringResource(R.string.stack_caffeine_title),
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -612,7 +1125,7 @@ private fun StackTodayTab(
                             Column {
                                 Text(
                                     text = stringResource(R.string.stack_caffeine_now, caf.activeMgNow.roundToInt()),
-                                    style = MaterialTheme.typography.titleLarge,
+                                    style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
@@ -642,6 +1155,37 @@ private fun StackTodayTab(
                             )
                         }
 
+                        if (state.todayCaffeineLogs.isNotEmpty()) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                state.todayCaffeineLogs.forEach { entry ->
+                                    val mgVal = entry.log.caffeineMg ?: entry.item?.caffeineMgPerServing ?: 0
+                                    val hhmm = entry.log.takenAt.atZone(ZoneId.systemDefault()).toLocalTime()
+                                        .format(DateTimeFormatter.ofPattern("HH:mm"))
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = CardElevated,
+                                        onClick = { onEditCaffeineLog(entry) }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(Icons.Default.AccessTime, contentDescription = null, tint = GoldPr, modifier = Modifier.size(13.dp))
+                                            Text(
+                                                text = "$mgVal mg • $hhmm",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -660,136 +1204,13 @@ private fun StackTodayTab(
                                 onClick = { onQuickCaffeine(160, "Energy Drink", "Енергетик") },
                                 label = { Text(stringResource(R.string.stack_quick_energy), maxLines = 1) }
                             )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Stack Compatibility & Intake Recommendations Card
-        if (state.interactions.isNotEmpty()) {
-            item {
-                val hasConflicts = state.interactions.any { it.kind != InteractionKind.SYNERGY }
-                ObsidianCard(
-                    highlightedBorder = if (hasConflicts) GoldPr else null,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = onToggleCompat)
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (hasConflicts) Icons.Default.Warning else Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = if (hasConflicts) GoldPr else EmeraldRest
-                                )
-                                Text(
-                                    text = stringResource(R.string.stack_compat_title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Icon(
-                                imageVector = if (compatExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            AssistChip(
+                                onClick = onOpenCustomCaffeine,
+                                leadingIcon = { Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                label = { Text(stringResource(R.string.stack_quick_caffeine_custom), maxLines = 1) }
                             )
                         }
-
-                        if (compatExpanded) {
-                            state.interactions.forEach { inter ->
-                                val col = when (inter.kind) {
-                                    InteractionKind.SYNERGY -> EmeraldRest
-                                    InteractionKind.CAUTION -> GoldPr
-                                    InteractionKind.CONFLICT -> CoralEnergy
-                                }
-                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(
-                                        text = if (isUk) inter.titleUk else inter.titleEn,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = col
-                                    )
-                                    Text(
-                                        text = if (isUk) inter.detailUk else inter.detailEn,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            OutlinedButton(
-                                onClick = onOpenCompatGuide,
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.stack_compat_guide_btn))
-                            }
-                        }
                     }
-                }
-            }
-        } else {
-            item {
-                ObsidianCard(
-                    onClick = onOpenCompatGuide,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(Icons.Default.MenuBook, contentDescription = null, tint = ElectricBlue)
-                        Text(
-                            text = stringResource(R.string.stack_compat_guide_btn),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Grouped Daily Checklist Sections
-        val orderedSlots = listOf(
-            StackTimeSlot.MORNING_MEAL to R.string.stack_slot_morning,
-            StackTimeSlot.DAY_EVENING to R.string.stack_slot_day,
-            StackTimeSlot.WORKOUT to R.string.stack_slot_workout,
-            StackTimeSlot.BEDTIME to R.string.stack_slot_bedtime
-        )
-
-        orderedSlots.forEach { (slot, headerRes) ->
-            val slotItems = state.dueTodayItems.filter { it.slot == slot }
-            if (slotItems.isNotEmpty()) {
-                item {
-                    Text(
-                        text = stringResource(headerRes),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                items(slotItems, key = { it.withSchedules.item.id }) { ui ->
-                    StackChecklistRowCard(
-                        itemUi = ui,
-                        isUk = isUk,
-                        onToggle = { onToggleItem(ui) }
-                    )
                 }
             }
         }
@@ -797,118 +1218,276 @@ private fun StackTodayTab(
 }
 
 @Composable
-private fun StackChecklistRowCard(
-    itemUi: StackChecklistItemUi,
+private fun StackSlotGroupCard(
+    group: StackSlotGroupUi,
     isUk: Boolean,
-    onToggle: () -> Unit
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onTakeAll: () -> Unit,
+    onToggleDose: (StackDoseItemUi) -> Unit,
+    onOpenDoseTimePicker: (StackDoseItemUi) -> Unit,
+    onEditItem: (SupplementWithSchedules) -> Unit
 ) {
-    val item = itemUi.withSchedules.item
-    val taken = itemUi.takenTodayLogId != null
-    val name = if (isUk) item.nameUk else item.nameEn
-    val doseStr = "${formatDose(item.defaultDose)} ${unitLabel(item.unit, isUk)}"
-    val guide = if (isUk) itemUi.recommendation.timingUk else itemUi.recommendation.timingEn
-    val trigLabel = itemUi.withSchedules.schedules.firstOrNull { it.enabled && it.deletedAt == null }?.let { s ->
-        val base = stringResource(triggerLabelRes(s.triggerType))
-        val time = s.timeOfDay?.format(DateTimeFormatter.ofPattern("HH:mm"))
-        if (time != null) "$base • $time" else base
-    }
+    val slotTitle = stringResource(slotShortLabelRes(group.slot))
+    val slotIcon = slotIcon(group.slot)
+    val haptics = LocalHapticFeedback.current
 
     ObsidianCard(
-        containerColor = if (taken) CardElevated.copy(alpha = 0.65f) else MaterialTheme.colorScheme.surface,
-        onClick = onToggle,
+        highlightedBorder = if (group.isComplete) EmeraldRest.copy(alpha = 0.45f) else null,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Group Header
+            Row(
                 modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(if (taken) EmeraldRest else CardElevated),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpand)
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (taken) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                } else {
-                    Icon(
-                        imageVector = if (item.category == SupplementCategory.PRE_WORKOUT) Icons.Default.Bolt else Icons.Default.Medication,
-                        contentDescription = null,
-                        tint = ElectricBlue,
-                        modifier = Modifier.size(18.dp)
+                Icon(
+                    imageVector = if (group.isComplete) Icons.Default.Check else slotIcon,
+                    contentDescription = null,
+                    tint = if (group.isComplete) EmeraldRest else ElectricBlue,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = if (group.isComplete) {
+                        stringResource(R.string.stack_slot_done_header, slotTitle, group.takenCount, group.totalCount)
+                    } else {
+                        slotTitle
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (group.isComplete) EmeraldRest else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+
+                if (!group.isComplete && group.pendingCount >= 2) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = ElectricBlue.copy(alpha = 0.16f),
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onTakeAll()
+                        }
+                    ) {
+                        Text(
+                            text = stringResource(R.string.stack_take_all),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = ElectricBlue,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                } else if (!group.isComplete) {
+                    Text(
+                        text = "${group.takenCount}/${group.totalCount}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
             }
 
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = name,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        textDecoration = if (taken) TextDecoration.LineThrough else TextDecoration.None,
-                        color = if (taken) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Surface(shape = RoundedCornerShape(8.dp), color = CardElevated) {
-                        Text(
-                            text = doseStr,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = ElectricBlue,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+            AnimatedVisibility(visible = isExpanded) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    group.doses.forEach { doseUi ->
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        )
+                        StackDoseRow(
+                            doseUi = doseUi,
+                            isUk = isUk,
+                            onToggle = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onToggleDose(doseUi)
+                            },
+                            onPickTime = { onOpenDoseTimePicker(doseUi) },
+                            onEdit = { onEditItem(doseUi.withSchedules) }
                         )
                     }
                 }
-
-                Text(
-                    text = listOfNotNull(trigLabel, guide).joinToString(" • "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                if (!taken && itemUi.liveWarning != null) {
-                    ScaleBadgePill(
-                        text = if (isUk) itemUi.liveWarning.titleUk else itemUi.liveWarning.titleEn,
-                        color = if (itemUi.liveWarning.kind == InteractionKind.CONFLICT) CoralEnergy else GoldPr
-                    )
-                }
-            }
-
-            item.servingsRemaining?.let { rem ->
-                Text(
-                    text = stringResource(R.string.stack_servings_short, formatDose(rem)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (itemUi.isLowStock) GoldPr else MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
 }
 
+@Composable
+private fun StackDoseRow(
+    doseUi: StackDoseItemUi,
+    isUk: Boolean,
+    onToggle: () -> Unit,
+    onPickTime: () -> Unit,
+    onEdit: () -> Unit
+) {
+    val item = doseUi.item
+    val taken = doseUi.takenTodayLogId != null
+    val name = if (isUk) item.nameUk else item.nameEn
+    val doseStr = "${formatDose(item.defaultDose)} ${unitLabel(item.unit, isUk)}"
+
+    val takenHhmm = if (taken && doseUi.takenAt != null) {
+        doseUi.takenAt.atZone(ZoneId.systemDefault()).toLocalTime()
+            .format(DateTimeFormatter.ofPattern("HH:mm"))
+    } else null
+
+    val scheduleSubtitle = if (doseUi.schedule != null) {
+        val trig = stringResource(triggerLabelRes(doseUi.schedule.triggerType))
+        val time = doseUi.schedule.timeOfDay?.format(DateTimeFormatter.ofPattern("HH:mm"))
+        if (time != null) "$time • $trig" else trig
+    } else {
+        stringResource(R.string.stack_no_schedule_hint)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(start = 14.dp, end = 4.dp, top = 11.dp, bottom = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(if (taken) EmeraldRest else CardElevated)
+                .then(
+                    if (!taken) Modifier.border(1.5.dp, ElectricBlue.copy(alpha = 0.7f), CircleShape)
+                    else Modifier
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (taken) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(18.dp)
+                )
+            } else if (item.category == SupplementCategory.PRE_WORKOUT) {
+                Icon(
+                    Icons.Default.Bolt,
+                    contentDescription = null,
+                    tint = ElectricBlue,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    textDecoration = if (taken) TextDecoration.LineThrough else TextDecoration.None,
+                    color = if (taken) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Surface(shape = RoundedCornerShape(8.dp), color = CardElevated) {
+                    Text(
+                        text = doseStr,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (taken) MaterialTheme.colorScheme.onSurfaceVariant else ElectricBlue,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            if (takenHhmm != null) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = EmeraldRest.copy(alpha = 0.14f),
+                    onClick = onPickTime
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.stack_taken_at, takenHhmm),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EmeraldRest,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Icon(
+                            Icons.Default.AccessTime,
+                            contentDescription = stringResource(R.string.stack_edit_time_cd),
+                            tint = EmeraldRest,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = scheduleSubtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (!taken && doseUi.liveWarning?.kind == InteractionKind.CONFLICT) {
+                ScaleBadgePill(
+                    text = if (isUk) doseUi.liveWarning.titleUk else doseUi.liveWarning.titleEn,
+                    color = CoralEnergy
+                )
+            }
+        }
+
+        if (!taken) {
+            IconButton(onClick = onPickTime) {
+                Icon(
+                    Icons.Default.AccessTime,
+                    contentDescription = stringResource(R.string.stack_log_custom_time_cd),
+                    tint = ElectricBlue,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        IconButton(onClick = onEdit) {
+            Icon(
+                Icons.Default.Edit,
+                contentDescription = stringResource(R.string.stack_edit_title),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StackInventoryTab(
     state: StackUiState,
     isUk: Boolean,
+    hasNotifPerm: Boolean,
+    canExactAlarm: Boolean,
+    onRequestNotifPerm: () -> Unit,
+    onOpenExactAlarmSettings: () -> Unit,
     onToggleReminders: (Boolean) -> Unit,
+    onTestPush: () -> Unit,
     onOpenBedtimePicker: () -> Unit,
     onOpenCompatGuide: () -> Unit,
-    onEditItem: (StackChecklistItemUi) -> Unit,
-    onRestockItem: (StackChecklistItemUi) -> Unit,
-    onDeleteLog: (Long) -> Unit
+    onEditItem: (StackShelfItemUi) -> Unit,
+    onRestockItem: (StackShelfItemUi) -> Unit
 ) {
     val bedH = state.bedtimeMinutesOfDay / 60
     val bedM = state.bedtimeMinutesOfDay % 60
@@ -919,7 +1498,7 @@ private fun StackInventoryTab(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 92.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Push Reminders & Bedtime Card
+        // Reminders, Permissions Diagnostic, Next Reminder, Test Push & Bedtime Card
         item {
             ObsidianCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -952,18 +1531,72 @@ private fun StackInventoryTab(
                         }
                         Switch(checked = state.remindersEnabled, onCheckedChange = onToggleReminders)
                     }
-                    HorizontalDivider()
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = onOpenBedtimePicker)
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(stringResource(R.string.stack_bedtime_label), style = MaterialTheme.typography.bodyMedium)
-                        Text(bedLabel, style = MaterialTheme.typography.titleSmall, color = ElectricBlue, fontWeight = FontWeight.Bold)
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = (if (hasNotifPerm) EmeraldRest else GoldPr).copy(alpha = 0.16f),
+                            onClick = { if (!hasNotifPerm) onRequestNotifPerm() }
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    if (hasNotifPerm) R.string.stack_perm_notif_ok else R.string.stack_perm_notif_missing
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (hasNotifPerm) EmeraldRest else GoldPr,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = (if (canExactAlarm) EmeraldRest else GoldPr).copy(alpha = 0.16f),
+                            onClick = { if (!canExactAlarm) onOpenExactAlarmSettings() }
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    if (canExactAlarm) R.string.stack_perm_exact_ok else R.string.stack_perm_exact_missing
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (canExactAlarm) EmeraldRest else GoldPr,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
                     }
+
+                    val nextText = formatNextReminder(state.nextReminder, isUk)
+                    Text(
+                        text = nextText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.nextReminder != null) ElectricBlue else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onTestPush,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.NotificationsActive, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.stack_test_push_btn), maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = onOpenBedtimePicker,
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(Icons.Default.Bedtime, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(bedLabel, maxLines = 1)
+                        }
+                    }
+
                     HorizontalDivider()
                     Row(
                         modifier = Modifier
@@ -985,10 +1618,12 @@ private fun StackInventoryTab(
             }
         }
 
-        items(state.inventoryItems, key = { it.withSchedules.item.id }) { ui ->
+        items(state.shelfItems, key = { it.withSchedules.item.id }) { ui ->
             val item = ui.withSchedules.item
+            val activeSchedules = ui.withSchedules.schedules.filter { it.enabled && it.deletedAt == null }
             val name = if (isUk) item.nameUk else item.nameEn
             val tip = if (isUk) ui.recommendation.tipUk else ui.recommendation.tipEn
+
             ObsidianCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(14.dp),
@@ -1007,19 +1642,51 @@ private fun StackInventoryTab(
                             )
                             Text(
                                 text = stringResource(categoryLabelRes(item.category)) +
-                                    ((item.caffeineMgPerServing ?: 0).takeIf { it > 0 }?.let { " • $it mg caffeine" } ?: ""),
+                                    ((item.caffeineMgPerServing ?: 0).takeIf { it > 0 }?.let { " • $it mg caffeine" } ?: "") +
+                                    (if (ui.dueTodayCount > 0) " • ${ui.takenTodayCount}/${ui.dueTodayCount}" else ""),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         IconButton(onClick = { onEditItem(ui) }) {
-                            Icon(Icons.Default.Edit, contentDescription = null)
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.stack_edit_title))
                         }
                     }
 
-                    Row(
+                    // All schedules rendered as compact chips (supports 2+ doses/day!)
+                    if (activeSchedules.isEmpty()) {
+                        OutlinedButton(
+                            onClick = { onEditItem(ui) },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            border = BorderStroke(1.dp, GoldPr),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text(stringResource(R.string.stack_add_schedule_btn), color = GoldPr)
+                        }
+                    } else {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            activeSchedules.forEach { sched ->
+                                val trigStr = stringResource(triggerLabelRes(sched.triggerType))
+                                val timeStr = sched.timeOfDay?.format(DateTimeFormatter.ofPattern("HH:mm"))
+                                val label = if (timeStr != null) "$timeStr • $trigStr" else trigStr
+                                Surface(shape = RoundedCornerShape(10.dp), color = CardElevated) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = ElectricBlue,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         item.servingsRemaining?.let { rem ->
                             ScaleBadgePill(
@@ -1081,52 +1748,118 @@ private fun StackInventoryTab(
                 }
             }
         }
+    }
+}
 
-        // Recent Intake Logs
-        item {
-            Text(
-                text = stringResource(R.string.stack_history_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 6.dp)
-            )
-        }
-        if (state.recentLogs.isEmpty()) {
+@Composable
+private fun StackHistoryTab(
+    state: StackUiState,
+    isUk: Boolean,
+    onEditLogTime: (StackLogEntryUi) -> Unit,
+    onDeleteLog: (Long) -> Unit
+) {
+    val zone = ZoneId.systemDefault()
+    val today = LocalDate.now(zone)
+    val yesterday = today.minusDays(1)
+    val grouped = remember(state.recentLogs) {
+        state.recentLogs.groupBy { it.log.takenAt.atZone(zone).toLocalDate() }
+            .entries
+            .sortedByDescending { it.key }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 92.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (grouped.isEmpty()) {
             item {
-                Text(
-                    text = stringResource(R.string.stack_history_empty),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                ObsidianCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(R.string.stack_history_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
             }
         } else {
-            items(state.recentLogs, key = { it.log.id }) { entry ->
-                val itemName = entry.item?.let { if (isUk) it.nameUk else it.nameEn }
-                    ?: "${entry.log.caffeineMg ?: 0} mg"
-                val unitStr = entry.item?.let { unitLabel(it.unit, isUk) } ?: ""
-                ObsidianCard(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+            grouped.forEach { (date, entries) ->
+                item(key = "hdr_$date") {
+                    val headerText = when (date) {
+                        today -> stringResource(R.string.stack_history_today)
+                        yesterday -> stringResource(R.string.stack_history_yesterday)
+                        else -> formatDateShort(date)
+                    }
+                    Text(
+                        text = headerText,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                items(entries, key = { it.log.id }) { entry ->
+                    val itemName = entry.item?.let { if (isUk) it.nameUk else it.nameEn }
+                        ?: "${entry.log.caffeineMg ?: 0} mg"
+                    val unitStr = entry.item?.let { unitLabel(it.unit, isUk) } ?: ""
+                    val timeStr = entry.log.takenAt.atZone(zone).toLocalTime()
+                        .format(DateTimeFormatter.ofPattern("HH:mm"))
+                    val cafStr = entry.log.caffeineMg?.takeIf { it > 0 }?.let { " • $it mg" } ?: ""
+
+                    ObsidianCard(
+                        onClick = { onEditLogTime(entry) },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "$itemName • ${formatDose(entry.log.dose)} $unitStr".trim(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = formatInstantShort(entry.log.takenAt),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(onClick = { onDeleteLog(entry.log.id) }) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = stringResource(R.string.action_delete),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        Row(
+                            modifier = Modifier.padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "$timeStr • $itemName",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    if (entry.log.linkedWorkoutId != null) {
+                                        Surface(shape = RoundedCornerShape(8.dp), color = ElectricBlue.copy(alpha = 0.16f)) {
+                                            Text(
+                                                text = stringResource(R.string.stack_history_workout_badge),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = ElectricBlue,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = "${formatDose(entry.log.dose)} $unitStr$cafStr".trim(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(onClick = { onEditLogTime(entry) }) {
+                                Icon(
+                                    Icons.Default.AccessTime,
+                                    contentDescription = stringResource(R.string.stack_edit_time_cd),
+                                    tint = ElectricBlue,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            IconButton(onClick = { onDeleteLog(entry.log.id) }) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = stringResource(R.string.action_delete),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -1135,10 +1868,11 @@ private fun StackInventoryTab(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CompatibilityReferenceSheet(
     isUk: Boolean,
+    stackInteractions: List<StackInteraction>,
     onDismiss: () -> Unit,
     onAddPreset: (SupplementReferenceEntry) -> Unit
 ) {
@@ -1176,6 +1910,7 @@ private fun CompatibilityReferenceSheet(
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
+
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -1213,10 +1948,48 @@ private fun CompatibilityReferenceSheet(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(440.dp),
+                    .height(460.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                if (stackInteractions.isNotEmpty() && query.isBlank() && selectedCat == null) {
+                    item {
+                        ObsidianCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.stack_compat_your_stack),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ElectricBlue
+                                )
+                                stackInteractions.forEach { inter ->
+                                    val col = when (inter.kind) {
+                                        InteractionKind.SYNERGY -> EmeraldRest
+                                        InteractionKind.CAUTION -> GoldPr
+                                        InteractionKind.CONFLICT -> CoralEnergy
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                        Text(
+                                            text = if (isUk) inter.titleUk else inter.titleEn,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = col
+                                        )
+                                        Text(
+                                            text = if (isUk) inter.detailUk else inter.detailEn,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 items(filtered, key = { it.tag.name }) { entry ->
                     val name = if (isUk) entry.nameUk else entry.nameEn
                     val rec = entry.recommendation
@@ -1276,18 +2049,18 @@ private fun CompatibilityReferenceSheet(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun AddEditSupplementSheet(
-    initial: StackChecklistItemUi?,
+    initial: SupplementWithSchedules?,
     prefill: SupplementReferenceEntry?,
     existingStack: List<SupplementWithSchedules>,
     bedtimeMinutesOfDay: Int,
     isUk: Boolean,
     onDismiss: () -> Unit,
-    onSave: (SupplementItemEntity, SupplementScheduleEntity?) -> Unit,
+    onSave: (SupplementItemEntity, List<SupplementScheduleEntity>) -> Unit,
     onDelete: (() -> Unit)?
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val initItem = initial?.withSchedules?.item
-    val initSched = initial?.withSchedules?.schedules?.firstOrNull { it.deletedAt == null }
+    val initItem = initial?.item
+    val initScheds = initial?.schedules?.filter { it.deletedAt == null }.orEmpty()
     val allPresets = remember { SupplementInteractionEngine.referenceCatalog() }
 
     var nameText by remember {
@@ -1311,23 +2084,35 @@ private fun AddEditSupplementSheet(
     }
     var servingsText by remember { mutableStateOf(initItem?.servingsRemaining?.let { formatDose(it) } ?: "60") }
     var lowThreshText by remember { mutableStateOf(initItem?.lowStockThreshold?.let { formatDose(it) } ?: "10") }
-    var trigger by remember {
-        mutableStateOf(initSched?.triggerType ?: prefill?.defaultTrigger ?: SupplementTrigger.WITH_MEAL)
-    }
-    var timeText by remember {
+
+    var scheduleDrafts by remember {
         mutableStateOf(
-            initSched?.timeOfDay?.format(DateTimeFormatter.ofPattern("HH:mm"))
-                ?: prefill?.defaultTime
-                ?: when (trigger) {
-                    SupplementTrigger.WITH_MEAL -> "09:00"
-                    SupplementTrigger.BEDTIME -> "23:15"
-                    SupplementTrigger.FIXED_TIME -> "14:00"
-                    else -> ""
+            if (initScheds.isNotEmpty()) {
+                initScheds.map { s ->
+                    ScheduleDraft(
+                        existingId = s.id,
+                        remoteId = s.remoteId,
+                        trigger = s.triggerType,
+                        timeOfDay = s.timeOfDay,
+                        daysOfWeekMask = s.daysOfWeekMask
+                    )
                 }
+            } else {
+                val trig = prefill?.defaultTrigger ?: SupplementTrigger.WITH_MEAL
+                val defaultT = prefill?.defaultTime?.takeIf { it.isNotBlank() }?.let { raw ->
+                    runCatching { LocalTime.parse(raw, DateTimeFormatter.ofPattern("H:mm")) }.getOrNull()
+                } ?: defaultTimeForTrigger(trig)
+                listOf(ScheduleDraft(trigger = trig, timeOfDay = defaultT))
+            }
         )
+    }
+
+    var cycleExpanded by remember {
+        mutableStateOf((initItem?.cycleDaysOn ?: 0) > 0 && (initItem?.cycleDaysOff ?: 0) > 0)
     }
     var cycleOnText by remember { mutableStateOf(initItem?.cycleDaysOn?.toString() ?: "") }
     var cycleOffText by remember { mutableStateOf(initItem?.cycleDaysOff?.toString() ?: "") }
+    var timePickerDraftKey by remember { mutableStateOf<String?>(null) }
 
     val previewItem = SupplementItemEntity(
         id = initItem?.id ?: 0L,
@@ -1338,23 +2123,24 @@ private fun AddEditSupplementSheet(
         unit = unit,
         caffeineMgPerServing = caffeineText.toIntOrNull() ?: 0
     )
-    val previewParsedTime = timeText.trim().takeIf { it.isNotEmpty() }?.let { raw ->
-        runCatching { LocalTime.parse(raw, DateTimeFormatter.ofPattern("H:mm")) }.getOrNull()
+    val previewSchedules = scheduleDrafts.mapIndexed { idx, d ->
+        SupplementScheduleEntity(
+            id = if (d.existingId > 0L) d.existingId else -(idx + 1L),
+            supplementId = previewItem.id,
+            triggerType = d.trigger,
+            timeOfDay = if (needsTimeOfDay(d.trigger)) d.timeOfDay else null,
+            daysOfWeekMask = d.daysOfWeekMask,
+            enabled = true
+        )
     }
-    val previewSchedule = SupplementScheduleEntity(
-        supplementId = previewItem.id,
-        triggerType = trigger,
-        timeOfDay = previewParsedTime,
-        enabled = true
-    )
     val previewRec = SupplementInteractionEngine.recommendationFor(previewItem)
     val liveStackChecks = remember(
-        nameText, category, doseText, unit, caffeineText, trigger, timeText, existingStack, bedtimeMinutesOfDay
+        nameText, category, doseText, unit, caffeineText, scheduleDrafts, existingStack, bedtimeMinutesOfDay
     ) {
         if (nameText.isBlank()) emptyList()
         else SupplementInteractionEngine.previewForCandidate(
             candidate = previewItem,
-            schedule = previewSchedule,
+            schedules = previewSchedules,
             existingStack = existingStack,
             bedtimeMinutesOfDay = bedtimeMinutesOfDay
         )
@@ -1394,8 +2180,10 @@ private fun AddEditSupplementSheet(
                                 caffeineText = p.caffeineMg.toString()
                                 servingsText = "60"
                                 lowThreshText = "10"
-                                trigger = p.defaultTrigger
-                                timeText = p.defaultTime
+                                val parsedT = p.defaultTime.takeIf { it.isNotBlank() }?.let { raw ->
+                                    runCatching { LocalTime.parse(raw, DateTimeFormatter.ofPattern("H:mm")) }.getOrNull()
+                                } ?: defaultTimeForTrigger(p.defaultTrigger)
+                                scheduleDrafts = listOf(ScheduleDraft(trigger = p.defaultTrigger, timeOfDay = parsedT))
                             },
                             label = { Text(if (isUk) p.nameUk else p.nameEn, maxLines = 1) }
                         )
@@ -1477,57 +2265,174 @@ private fun AddEditSupplementSheet(
                 )
             }
 
-            Text(stringResource(R.string.stack_field_trigger), style = MaterialTheme.typography.labelMedium)
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                SupplementTrigger.entries.forEach { t ->
-                    FilterChip(
-                        selected = trigger == t,
-                        onClick = {
-                            trigger = t
-                            if (timeText.isBlank()) {
-                                timeText = when (t) {
-                                    SupplementTrigger.WITH_MEAL -> "09:00"
-                                    SupplementTrigger.FIXED_TIME -> "14:00"
-                                    SupplementTrigger.BEDTIME -> "23:15"
-                                    else -> ""
+            // Multi-Schedule Builder (supports 2+ doses/day e.g. Omega morning + evening, Creatine morning + post-workout!)
+            Text(
+                text = stringResource(R.string.stack_schedules_section),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+
+            scheduleDrafts.forEachIndexed { idx, draft ->
+                ObsidianCard(containerColor = CardElevated, modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = stringResource(R.string.stack_dose_n, idx + 1),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = ElectricBlue,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (needsTimeOfDay(draft.trigger)) {
+                                    val tLabel = (draft.timeOfDay ?: defaultTimeForTrigger(draft.trigger) ?: LocalTime.of(9, 0))
+                                        .format(DateTimeFormatter.ofPattern("HH:mm"))
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = ElectricBlue.copy(alpha = 0.16f),
+                                        onClick = { timePickerDraftKey = draft.key }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(Icons.Default.AccessTime, contentDescription = null, tint = ElectricBlue, modifier = Modifier.size(16.dp))
+                                            Text(tLabel, style = MaterialTheme.typography.labelLarge, color = ElectricBlue, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                                if (scheduleDrafts.size > 1) {
+                                    IconButton(
+                                        onClick = {
+                                            scheduleDrafts = scheduleDrafts.filterNot { it.key == draft.key }
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_delete), tint = CoralEnergy, modifier = Modifier.size(18.dp))
+                                    }
                                 }
                             }
-                        },
-                        label = { Text(stringResource(triggerLabelRes(t)), maxLines = 1) }
-                    )
+                        }
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SupplementTrigger.entries.forEach { t ->
+                                FilterChip(
+                                    selected = draft.trigger == t,
+                                    onClick = {
+                                        val nextTime = if (needsTimeOfDay(t)) {
+                                            draft.timeOfDay ?: defaultTimeForTrigger(t)
+                                        } else null
+                                        scheduleDrafts = scheduleDrafts.map {
+                                            if (it.key == draft.key) it.copy(trigger = t, timeOfDay = nextTime) else it
+                                        }
+                                    },
+                                    label = { Text(stringResource(triggerLabelRes(t)), maxLines = 1) }
+                                )
+                            }
+                        }
+
+                        // Compact 7-day selector
+                        val dayLetters = if (isUk) listOf("П", "В", "С", "Ч", "П", "С", "Н") else listOf("M", "T", "W", "T", "F", "S", "S")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            dayLetters.forEachIndexed { dayIdx, letter ->
+                                val bit = 1 shl dayIdx
+                                val selected = (draft.daysOfWeekMask and bit) != 0
+                                Box(
+                                    modifier = Modifier
+                                        .size(30.dp)
+                                        .clip(CircleShape)
+                                        .background(if (selected) ElectricBlue else MaterialTheme.colorScheme.surface)
+                                        .clickable {
+                                            val toggled = draft.daysOfWeekMask xor bit
+                                            val nextMask = if (toggled == 0) bit else toggled
+                                            scheduleDrafts = scheduleDrafts.map {
+                                                if (it.key == draft.key) it.copy(daysOfWeekMask = nextMask) else it
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = letter,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            if (trigger == SupplementTrigger.FIXED_TIME || trigger == SupplementTrigger.WITH_MEAL || trigger == SupplementTrigger.BEDTIME) {
-                OutlinedTextField(
-                    value = timeText,
-                    onValueChange = { timeText = it },
-                    label = { Text(stringResource(R.string.stack_field_time)) },
-                    singleLine = true,
+            if (scheduleDrafts.size < 5) {
+                OutlinedButton(
+                    onClick = {
+                        scheduleDrafts = scheduleDrafts + suggestNextScheduleDraft(category, scheduleDrafts)
+                    },
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
-                )
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.stack_add_another_dose))
+                }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = cycleOnText,
-                    onValueChange = { cycleOnText = it.filter(Char::isDigit) },
-                    label = { Text(stringResource(R.string.stack_field_cycle_on)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
+            // Collapsible Cycle ON / OFF section
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { cycleExpanded = !cycleExpanded }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = stringResource(R.string.stack_cycle_optional_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                OutlinedTextField(
-                    value = cycleOffText,
-                    onValueChange = { cycleOffText = it.filter(Char::isDigit) },
-                    label = { Text(stringResource(R.string.stack_field_cycle_off)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
+                Icon(
+                    imageVector = if (cycleExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            AnimatedVisibility(visible = cycleExpanded) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = cycleOnText,
+                        onValueChange = { cycleOnText = it.filter(Char::isDigit) },
+                        label = { Text(stringResource(R.string.stack_field_cycle_on)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = cycleOffText,
+                        onValueChange = { cycleOffText = it.filter(Char::isDigit) },
+                        label = { Text(stringResource(R.string.stack_field_cycle_off)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
             ObsidianCard(containerColor = CardElevated, modifier = Modifier.fillMaxWidth()) {
@@ -1595,9 +2500,6 @@ private fun AddEditSupplementSheet(
                     onClick = {
                         val trimmed = nameText.trim()
                         if (trimmed.isEmpty()) return@Button
-                        val parsedTime = timeText.trim().takeIf { it.isNotEmpty() }?.let { raw ->
-                            runCatching { LocalTime.parse(raw, DateTimeFormatter.ofPattern("H:mm")) }.getOrNull()
-                        }
                         val cycOn = cycleOnText.toIntOrNull()?.takeIf { it > 0 }
                         val cycOff = cycleOffText.toIntOrNull()?.takeIf { it > 0 }
                         val itemEntity = (initItem ?: SupplementItemEntity(
@@ -1621,13 +2523,20 @@ private fun AddEditSupplementSheet(
                                 initItem?.cycleStartDate ?: LocalDate.now()
                             } else null
                         )
-                        val schedEntity = SupplementScheduleEntity(
-                            supplementId = itemEntity.id,
-                            triggerType = trigger,
-                            timeOfDay = parsedTime,
-                            enabled = true
-                        )
-                        onSave(itemEntity, schedEntity)
+                        val schedEntities = scheduleDrafts.map { d ->
+                            val base = SupplementScheduleEntity(
+                                id = d.existingId,
+                                supplementId = itemEntity.id,
+                                triggerType = d.trigger,
+                                timeOfDay = if (needsTimeOfDay(d.trigger)) {
+                                    d.timeOfDay ?: defaultTimeForTrigger(d.trigger)
+                                } else null,
+                                daysOfWeekMask = d.daysOfWeekMask,
+                                enabled = true
+                            )
+                            if (d.remoteId != null) base.copy(remoteId = d.remoteId) else base
+                        }
+                        onSave(itemEntity, schedEntities)
                     },
                     enabled = nameText.isNotBlank(),
                     shape = RoundedCornerShape(18.dp),
@@ -1639,6 +2548,142 @@ private fun AddEditSupplementSheet(
             Spacer(Modifier.height(18.dp))
         }
     }
+
+    timePickerDraftKey?.let { key ->
+        val draft = scheduleDrafts.firstOrNull { it.key == key }
+        if (draft != null) {
+            val initT = draft.timeOfDay ?: defaultTimeForTrigger(draft.trigger) ?: LocalTime.of(9, 0)
+            val tpState = rememberTimePickerState(
+                initialHour = initT.hour,
+                initialMinute = initT.minute,
+                is24Hour = true
+            )
+            AlertDialog(
+                onDismissRequest = { timePickerDraftKey = null },
+                title = { Text(stringResource(R.string.stack_field_time)) },
+                text = { TimePicker(state = tpState) },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val chosen = LocalTime.of(tpState.hour, tpState.minute)
+                            scheduleDrafts = scheduleDrafts.map {
+                                if (it.key == key) it.copy(timeOfDay = chosen) else it
+                            }
+                            timePickerDraftKey = null
+                        }
+                    ) {
+                        Text(stringResource(R.string.action_save))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { timePickerDraftKey = null }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            )
+        }
+    }
+}
+
+private fun checkNotifPerm(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+        PackageManager.PERMISSION_GRANTED
+
+private fun checkExactAlarmPerm(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+    val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return false
+    return am.canScheduleExactAlarms()
+}
+
+private fun needsTimeOfDay(trigger: SupplementTrigger): Boolean =
+    trigger == SupplementTrigger.FIXED_TIME ||
+        trigger == SupplementTrigger.WITH_MEAL ||
+        trigger == SupplementTrigger.BEDTIME
+
+private fun defaultTimeForTrigger(trigger: SupplementTrigger): LocalTime? = when (trigger) {
+    SupplementTrigger.WITH_MEAL -> LocalTime.of(9, 0)
+    SupplementTrigger.FIXED_TIME -> LocalTime.of(14, 0)
+    SupplementTrigger.BEDTIME -> LocalTime.of(23, 15)
+    SupplementTrigger.BEFORE_WORKOUT, SupplementTrigger.AFTER_WORKOUT -> null
+}
+
+private fun suggestNextScheduleDraft(
+    category: SupplementCategory,
+    existing: List<ScheduleDraft>
+): ScheduleDraft {
+    if ((category == SupplementCategory.CREATINE || category == SupplementCategory.PROTEIN) &&
+        existing.none { it.trigger == SupplementTrigger.AFTER_WORKOUT }
+    ) {
+        return ScheduleDraft(trigger = SupplementTrigger.AFTER_WORKOUT, timeOfDay = null)
+    }
+    val hasEvening = existing.any {
+        val h = it.timeOfDay?.hour ?: return@any false
+        h >= 18
+    }
+    val hasMorning = existing.any {
+        val h = it.timeOfDay?.hour ?: return@any false
+        h < 12
+    }
+    return when {
+        !hasEvening -> ScheduleDraft(trigger = SupplementTrigger.WITH_MEAL, timeOfDay = LocalTime.of(20, 0))
+        !hasMorning -> ScheduleDraft(trigger = SupplementTrigger.WITH_MEAL, timeOfDay = LocalTime.of(9, 0))
+        else -> ScheduleDraft(trigger = SupplementTrigger.FIXED_TIME, timeOfDay = LocalTime.of(14, 0))
+    }
+}
+
+@Composable
+private fun formatNextReminder(info: NextReminderInfo?, isUk: Boolean): String {
+    if (info == null) return stringResource(R.string.stack_next_reminder_none)
+    val today = LocalDate.now(info.triggerAt.zone)
+    val targetDate = info.triggerAt.toLocalDate()
+    val timeStr = info.triggerAt.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
+    val itemsStr = (if (isUk) info.itemNamesUk else info.itemNamesEn).take(3).joinToString(", ")
+    return when (targetDate) {
+        today -> stringResource(R.string.stack_next_reminder_today, timeStr, itemsStr)
+        today.plusDays(1) -> stringResource(R.string.stack_next_reminder_tomorrow, timeStr, itemsStr)
+        else -> {
+            val dayStr = "${formatDateShort(targetDate)} $timeStr"
+            stringResource(R.string.stack_next_reminder_day, dayStr, itemsStr)
+        }
+    }
+}
+
+private fun slotIcon(slot: StackTimeSlot): ImageVector = when (slot) {
+    StackTimeSlot.MORNING -> Icons.Default.WbSunny
+    StackTimeSlot.AFTERNOON -> Icons.Default.Schedule
+    StackTimeSlot.WORKOUT -> Icons.Default.FitnessCenter
+    StackTimeSlot.EVENING -> Icons.Default.WbTwilight
+    StackTimeSlot.BEDTIME -> Icons.Default.Bedtime
+    StackTimeSlot.ANYTIME -> Icons.Default.Medication
+}
+
+@StringRes
+private fun slotShortLabelRes(slot: StackTimeSlot): Int = when (slot) {
+    StackTimeSlot.MORNING -> R.string.stack_slot_morning_short
+    StackTimeSlot.AFTERNOON -> R.string.stack_slot_afternoon_short
+    StackTimeSlot.WORKOUT -> R.string.stack_slot_workout_short
+    StackTimeSlot.EVENING -> R.string.stack_slot_evening_short
+    StackTimeSlot.BEDTIME -> R.string.stack_slot_bedtime_short
+    StackTimeSlot.ANYTIME -> R.string.stack_slot_anytime_short
+}
+
+private fun slotShortLabelEn(slot: StackTimeSlot): String = when (slot) {
+    StackTimeSlot.MORNING -> "Morning"
+    StackTimeSlot.AFTERNOON -> "Afternoon"
+    StackTimeSlot.WORKOUT -> "Workout"
+    StackTimeSlot.EVENING -> "Evening"
+    StackTimeSlot.BEDTIME -> "Bedtime"
+    StackTimeSlot.ANYTIME -> "Anytime"
+}
+
+private fun slotShortLabelUk(slot: StackTimeSlot): String = when (slot) {
+    StackTimeSlot.MORNING -> "Ранок"
+    StackTimeSlot.AFTERNOON -> "День"
+    StackTimeSlot.WORKOUT -> "Тренування"
+    StackTimeSlot.EVENING -> "Вечір"
+    StackTimeSlot.BEDTIME -> "Перед сном"
+    StackTimeSlot.ANYTIME -> "Будь-коли"
 }
 
 private fun formatDose(v: Double): String =

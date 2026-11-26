@@ -453,8 +453,14 @@ interface SupplementDao {
     @Query("SELECT * FROM supplement_items WHERE remoteId = :remoteId LIMIT 1")
     suspend fun findItemByRemoteId(remoteId: String): SupplementItemEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertItem(item: SupplementItemEntity): Long
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertItem(item: SupplementItemEntity): Long
+
+    @Update
+    suspend fun updateItem(item: SupplementItemEntity)
+
+    @Query("UPDATE supplement_items SET servingsRemaining = :servings, updatedAt = :updatedAt, syncState = 'PENDING_UPLOAD' WHERE id = :itemId")
+    suspend fun updateItemServings(itemId: Long, servings: Double, updatedAt: Instant)
 
     @Query("SELECT * FROM supplement_schedules ORDER BY id ASC")
     suspend fun getAllSchedulesOnce(): List<SupplementScheduleEntity>
@@ -465,8 +471,14 @@ interface SupplementDao {
     @Query("SELECT * FROM supplement_schedules WHERE remoteId = :remoteId LIMIT 1")
     suspend fun findScheduleByRemoteId(remoteId: String): SupplementScheduleEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertSchedule(schedule: SupplementScheduleEntity): Long
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertSchedule(schedule: SupplementScheduleEntity): Long
+
+    @Update
+    suspend fun updateSchedule(schedule: SupplementScheduleEntity)
+
+    @Query("UPDATE supplement_schedules SET deletedAt = :now, updatedAt = :now, syncState = 'PENDING_UPLOAD' WHERE id = :scheduleId")
+    suspend fun softDeleteScheduleById(scheduleId: Long, now: Instant)
 
     @Query("UPDATE supplement_schedules SET deletedAt = :now, updatedAt = :now, syncState = 'PENDING_UPLOAD' WHERE supplementId = :supplementId AND deletedAt IS NULL")
     suspend fun softDeleteSchedulesForItem(supplementId: Long, now: Instant)
@@ -516,6 +528,9 @@ interface SupplementDao {
     )
     suspend fun findPreWorkoutLogsForWorkout(workoutId: Long): List<SupplementLogEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertLog(log: SupplementLogEntity): Long
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertLog(log: SupplementLogEntity): Long
+
+    @Update
+    suspend fun updateLog(log: SupplementLogEntity)
 }

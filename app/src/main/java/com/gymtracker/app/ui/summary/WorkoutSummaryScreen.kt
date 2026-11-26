@@ -215,10 +215,11 @@ fun WorkoutSummaryScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    state.pendingPostWorkoutSupplements.forEach { supp ->
+                                    state.pendingPostWorkoutSupplements.forEach { dose ->
+                                        val supp = dose.item
                                         val label = if (isUk) supp.nameUk else supp.nameEn
                                         AssistChip(
-                                            onClick = { viewModel.logPostWorkoutSupplement(supp.id) },
+                                            onClick = { viewModel.logPostWorkoutSupplement(supp.id, dose.scheduleId) },
                                             label = { Text("+ $label", maxLines = 1) }
                                         )
                                     }

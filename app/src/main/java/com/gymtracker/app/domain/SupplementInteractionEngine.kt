@@ -748,10 +748,26 @@ object SupplementInteractionEngine {
         bedtimeMinutesOfDay: Int = 0,
         now: Instant = Instant.now(),
         zoneId: ZoneId = ZoneId.systemDefault()
+    ): List<StackInteraction> = previewForCandidate(
+        candidate = candidate,
+        schedules = listOfNotNull(schedule),
+        existingStack = existingStack,
+        bedtimeMinutesOfDay = bedtimeMinutesOfDay,
+        now = now,
+        zoneId = zoneId
+    )
+
+    fun previewForCandidate(
+        candidate: SupplementItemEntity,
+        schedules: List<SupplementScheduleEntity>,
+        existingStack: List<SupplementWithSchedules>,
+        bedtimeMinutesOfDay: Int = 0,
+        now: Instant = Instant.now(),
+        zoneId: ZoneId = ZoneId.systemDefault()
     ): List<StackInteraction> {
         val tempId = if (candidate.id != 0L) candidate.id else -1L
         val synItem = candidate.copy(id = tempId)
-        val synScheds = listOfNotNull(schedule?.copy(supplementId = tempId, enabled = true, deletedAt = null))
+        val synScheds = schedules.map { it.copy(supplementId = tempId, enabled = true, deletedAt = null) }
         val merged = existingStack.filter { it.item.id != tempId } + SupplementWithSchedules(synItem, synScheds)
         return analyzeStack(merged, emptyList(), now, bedtimeMinutesOfDay, zoneId)
             .filter { tempId in it.involvedItemIds }
@@ -1028,14 +1044,24 @@ object SupplementInteractionEngine {
             }
         }
 
-        // Individual timing checks
+        // Individual timing checks across all enabled schedules
         for (sw in items) {
             val tag = classify(sw.item)
-            val trig = sw.schedules.firstOrNull { it.enabled && it.deletedAt == null }?.triggerType
-            val mins = effectiveScheduleMinutes(sw.schedules, bedtimeMinutesOfDay)
+            val activeScheds = sw.schedules.filter { it.enabled && it.deletedAt == null }
+            val anyLateEvening = activeScheds.any { s ->
+                val m = effectiveMinuteOfSchedule(s, bedtimeMinutesOfDay)
+                (m != null && m >= 19 * 60) || s.triggerType == SupplementTrigger.BEDTIME
+            }
+            val anyFastedSlot = activeScheds.any { s ->
+                s.triggerType == SupplementTrigger.BEFORE_WORKOUT || s.triggerType == SupplementTrigger.BEDTIME
+            }
+            val anyDaytimeMelatonin = activeScheds.any { s ->
+                val m = effectiveMinuteOfSchedule(s, bedtimeMinutesOfDay)
+                s.triggerType == SupplementTrigger.BEFORE_WORKOUT || (m != null && m < 17 * 60)
+            }
 
             if (tag in setOf(IngredientTag.VITAMIN_D3, IngredientTag.B_COMPLEX, IngredientTag.RHODIOLA, IngredientTag.COQ10, IngredientTag.CARNITINE) &&
-                ((mins != null && mins >= 19 * 60) || trig == SupplementTrigger.BEDTIME)
+                anyLateEvening
             ) {
                 result += StackInteraction(
                     id = "caution_late_${sw.item.id}",
@@ -1049,7 +1075,7 @@ object SupplementInteractionEngine {
             }
 
             if (tag in setOf(IngredientTag.ZINC, IngredientTag.IRON, IngredientTag.MULTIVITAMIN, IngredientTag.VITAMIN_D3, IngredientTag.VITAMIN_K2, IngredientTag.OMEGA_3, IngredientTag.CURCUMIN, IngredientTag.COQ10) &&
-                (trig == SupplementTrigger.BEFORE_WORKOUT || trig == SupplementTrigger.BEDTIME)
+                anyFastedSlot
             ) {
                 result += StackInteraction(
                     id = "caution_food_${sw.item.id}",
@@ -1062,9 +1088,7 @@ object SupplementInteractionEngine {
                 )
             }
 
-            if (tag == IngredientTag.MELATONIN &&
-                (trig == SupplementTrigger.BEFORE_WORKOUT || (mins != null && mins < 17 * 60))
-            ) {
+            if (tag == IngredientTag.MELATONIN && anyDaytimeMelatonin) {
                 result += StackInteraction(
                     id = "caution_melatonin_day_${sw.item.id}",
                     kind = InteractionKind.CAUTION,
@@ -1152,31 +1176,38 @@ object SupplementInteractionEngine {
         maxGapMin: Int
     ): Boolean {
         for (sa in a) {
+            val activeA = sa.schedules.filter { it.enabled && it.deletedAt == null }
             for (sb in b) {
-                val trigA = sa.schedules.firstOrNull { it.enabled && it.deletedAt == null }?.triggerType
-                val trigB = sb.schedules.firstOrNull { it.enabled && it.deletedAt == null }?.triggerType
-                if (trigA != null && trigA == trigB &&
-                    trigA in setOf(SupplementTrigger.BEFORE_WORKOUT, SupplementTrigger.AFTER_WORKOUT, SupplementTrigger.BEDTIME)
-                ) {
-                    return true
-                }
-                val minA = effectiveScheduleMinutes(sa.schedules, bedtimeMinutesOfDay)
-                val minB = effectiveScheduleMinutes(sb.schedules, bedtimeMinutesOfDay)
-                if (minA != null && minB != null) {
-                    val diff = abs(minA - minB)
-                    val wrapDiff = minOf(diff, 1440 - diff)
-                    if (wrapDiff < maxGapMin) return true
+                val activeB = sb.schedules.filter { it.enabled && it.deletedAt == null }
+                for (schedA in activeA) {
+                    for (schedB in activeB) {
+                        if (schedA.triggerType == schedB.triggerType &&
+                            schedA.triggerType in setOf(
+                                SupplementTrigger.BEFORE_WORKOUT,
+                                SupplementTrigger.AFTER_WORKOUT,
+                                SupplementTrigger.BEDTIME
+                            )
+                        ) {
+                            return true
+                        }
+                        val minA = effectiveMinuteOfSchedule(schedA, bedtimeMinutesOfDay)
+                        val minB = effectiveMinuteOfSchedule(schedB, bedtimeMinutesOfDay)
+                        if (minA != null && minB != null) {
+                            val diff = abs(minA - minB)
+                            val wrapDiff = minOf(diff, 1440 - diff)
+                            if (wrapDiff < maxGapMin) return true
+                        }
+                    }
                 }
             }
         }
         return false
     }
 
-    private fun effectiveScheduleMinutes(
-        schedules: List<SupplementScheduleEntity>,
+    private fun effectiveMinuteOfSchedule(
+        s: SupplementScheduleEntity,
         bedtimeMinutesOfDay: Int
     ): Int? {
-        val s = schedules.firstOrNull { it.enabled && it.deletedAt == null } ?: return null
         s.timeOfDay?.let { return it.hour * 60 + it.minute }
         return when (s.triggerType) {
             SupplementTrigger.BEDTIME -> ((bedtimeMinutesOfDay - 45) + 1440) % 1440

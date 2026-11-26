@@ -834,29 +834,33 @@ class CloudSyncManager @Inject constructor(
             for (row in remoteSuppItems) {
                 val rId = row.str("remote_id") ?: continue
                 val existing = suppDao.findItemByRemoteId(rId)
-                val localId = suppDao.upsertItem(
-                    SupplementItemEntity(
-                        id = existing?.id ?: 0L,
-                        nameEn = row.str("name_en") ?: "Supplement",
-                        nameUk = row.str("name_uk") ?: (row.str("name_en") ?: "Добавка"),
-                        category = row.enum("category", SupplementCategory.OTHER),
-                        defaultDose = row.double("default_dose") ?: 1.0,
-                        unit = row.enum("unit", SupplementUnit.CAPSULE),
-                        caffeineMgPerServing = row.int("caffeine_mg_per_serving"),
-                        servingsRemaining = row.double("servings_remaining"),
-                        lowStockThreshold = row.double("low_stock_threshold"),
-                        cycleDaysOn = row.int("cycle_days_on"),
-                        cycleDaysOff = row.int("cycle_days_off"),
-                        cycleStartDate = row.str("cycle_start_date")?.let { raw ->
-                            runCatching { LocalDate.parse(raw) }.getOrNull()
-                        },
-                        notes = row.str("notes"),
-                        remoteId = rId,
-                        updatedAt = row.instant("updated_at") ?: Instant.now(),
-                        deletedAt = row.instant("deleted_at"),
-                        syncState = SyncState.SYNCED
-                    )
+                val itemEntity = SupplementItemEntity(
+                    id = existing?.id ?: 0L,
+                    nameEn = row.str("name_en") ?: "Supplement",
+                    nameUk = row.str("name_uk") ?: (row.str("name_en") ?: "Добавка"),
+                    category = row.enum("category", SupplementCategory.OTHER),
+                    defaultDose = row.double("default_dose") ?: 1.0,
+                    unit = row.enum("unit", SupplementUnit.CAPSULE),
+                    caffeineMgPerServing = row.int("caffeine_mg_per_serving"),
+                    servingsRemaining = row.double("servings_remaining"),
+                    lowStockThreshold = row.double("low_stock_threshold"),
+                    cycleDaysOn = row.int("cycle_days_on"),
+                    cycleDaysOff = row.int("cycle_days_off"),
+                    cycleStartDate = row.str("cycle_start_date")?.let { raw ->
+                        runCatching { LocalDate.parse(raw) }.getOrNull()
+                    },
+                    notes = row.str("notes"),
+                    remoteId = rId,
+                    updatedAt = row.instant("updated_at") ?: Instant.now(),
+                    deletedAt = row.instant("deleted_at"),
+                    syncState = SyncState.SYNCED
                 )
+                val localId = if (existing == null) {
+                    suppDao.insertItem(itemEntity)
+                } else {
+                    suppDao.updateItem(itemEntity)
+                    existing.id
+                }
                 suppLocalIdByRemoteId[rId] = localId
             }
 
@@ -866,23 +870,26 @@ class CloudSyncManager @Inject constructor(
                 val suppLocalId = suppLocalIdByRemoteId[suppRid]
                     ?: suppDao.findItemByRemoteId(suppRid)?.id ?: continue
                 val existing = suppDao.findScheduleByRemoteId(rId)
-                suppDao.upsertSchedule(
-                    SupplementScheduleEntity(
-                        id = existing?.id ?: 0L,
-                        supplementId = suppLocalId,
-                        triggerType = row.enum("trigger_type", SupplementTrigger.FIXED_TIME),
-                        timeOfDay = row.str("time_of_day")?.let { raw ->
-                            runCatching { LocalTime.parse(raw) }.getOrNull()
-                        },
-                        offsetMinutes = row.int("offset_minutes"),
-                        daysOfWeekMask = row.int("days_of_week_mask") ?: 0b1111111,
-                        enabled = row.bool("enabled") ?: true,
-                        remoteId = rId,
-                        updatedAt = row.instant("updated_at") ?: Instant.now(),
-                        deletedAt = row.instant("deleted_at"),
-                        syncState = SyncState.SYNCED
-                    )
+                val schedEntity = SupplementScheduleEntity(
+                    id = existing?.id ?: 0L,
+                    supplementId = suppLocalId,
+                    triggerType = row.enum("trigger_type", SupplementTrigger.FIXED_TIME),
+                    timeOfDay = row.str("time_of_day")?.let { raw ->
+                        runCatching { LocalTime.parse(raw) }.getOrNull()
+                    },
+                    offsetMinutes = row.int("offset_minutes"),
+                    daysOfWeekMask = row.int("days_of_week_mask") ?: 0b1111111,
+                    enabled = row.bool("enabled") ?: true,
+                    remoteId = rId,
+                    updatedAt = row.instant("updated_at") ?: Instant.now(),
+                    deletedAt = row.instant("deleted_at"),
+                    syncState = SyncState.SYNCED
                 )
+                if (existing == null) {
+                    suppDao.insertSchedule(schedEntity)
+                } else {
+                    suppDao.updateSchedule(schedEntity)
+                }
             }
 
             for (row in remoteSuppLogs) {
@@ -895,20 +902,23 @@ class CloudSyncManager @Inject constructor(
                     workoutIdByRemoteId[wRid] ?: workoutDao.findWorkoutByRemoteId(wRid)?.id
                 }
                 val existing = suppDao.findLogByRemoteId(rId)
-                suppDao.upsertLog(
-                    SupplementLogEntity(
-                        id = existing?.id ?: 0L,
-                        supplementId = suppLocalId,
-                        takenAt = takenAt,
-                        dose = row.double("dose") ?: 1.0,
-                        caffeineMg = row.int("caffeine_mg"),
-                        linkedWorkoutId = linkedWId,
-                        remoteId = rId,
-                        updatedAt = row.instant("updated_at") ?: Instant.now(),
-                        deletedAt = row.instant("deleted_at"),
-                        syncState = SyncState.SYNCED
-                    )
+                val logEntity = SupplementLogEntity(
+                    id = existing?.id ?: 0L,
+                    supplementId = suppLocalId,
+                    takenAt = takenAt,
+                    dose = row.double("dose") ?: 1.0,
+                    caffeineMg = row.int("caffeine_mg"),
+                    linkedWorkoutId = linkedWId,
+                    remoteId = rId,
+                    updatedAt = row.instant("updated_at") ?: Instant.now(),
+                    deletedAt = row.instant("deleted_at"),
+                    syncState = SyncState.SYNCED
                 )
+                if (existing == null) {
+                    suppDao.insertLog(logEntity)
+                } else {
+                    suppDao.updateLog(logEntity)
+                }
             }
         }
 

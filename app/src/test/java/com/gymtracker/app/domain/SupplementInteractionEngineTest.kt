@@ -195,4 +195,30 @@ class SupplementInteractionEngineTest {
             assertFalse(entry.recommendation.avoidUk.isBlank())
         }
     }
+
+    @Test
+    fun multiScheduleCandidate_detectsConflictOnSecondDailyDose() {
+        val existing = listOf(
+            stackEntry(1, "Magnesium", "Магній", SupplementCategory.MINERAL, SupplementTrigger.BEDTIME, LocalTime.of(23, 15))
+        )
+        val zinc = SupplementItemEntity(
+            id = 2,
+            nameEn = "Zinc",
+            nameUk = "Цинк",
+            category = SupplementCategory.MINERAL,
+            defaultDose = 25.0,
+            unit = SupplementUnit.MG
+        )
+        // First dose safely at 10:00, second dose at 23:00 -> conflicts with bedtime Magnesium!
+        val preview = SupplementInteractionEngine.previewForCandidate(
+            candidate = zinc,
+            schedules = listOf(
+                SupplementScheduleEntity(id = 10, supplementId = 2, triggerType = SupplementTrigger.WITH_MEAL, timeOfDay = LocalTime.of(10, 0)),
+                SupplementScheduleEntity(id = 11, supplementId = 2, triggerType = SupplementTrigger.BEDTIME, timeOfDay = LocalTime.of(23, 0))
+            ),
+            existingStack = existing,
+            zoneId = ZoneOffset.UTC
+        )
+        assertTrue(preview.any { it.id.startsWith("sep_zinc_mag") && it.kind == InteractionKind.CONFLICT })
+    }
 }
